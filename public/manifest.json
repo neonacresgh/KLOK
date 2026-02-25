@@ -1,0 +1,18 @@
+{
+  "name": "KLOK",
+  "short_name": "KLOK",
+  "description": "Student Information Portal",
+  "start_url": "/landing",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo/kloklogo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
