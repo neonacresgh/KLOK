@@ -1,3 +1,4 @@
+// Vercel Redeploy Fix: 2026-02-26
 import { NextResponse } from 'next/server';
 import https from 'https';
 
