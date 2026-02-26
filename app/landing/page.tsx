@@ -403,7 +403,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-gray-50 flex flex-col items-center px-4 pt-10 sm:pt-20 pb-10">
+    <div className="min-h-[100dvh] bg-gray-50 flex flex-col items-center px-4 pt-10 sm:pt-20 pb-10 overflow-x-hidden">
 
       {/* ── Logo ── */}
       <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-gray-900 mb-7 sm:mb-10 select-none">
@@ -421,7 +421,7 @@ export default function LandingPage() {
       )}
 
       {/* ── Search area ── */}
-      <div className="w-full max-w-xl relative z-30">
+      <div className="w-full max-w-xl min-w-0 relative z-30">
 
         {/* Dropdown backdrop — transparent, sits behind dropdown but above page */}
         {showDrop && (
@@ -432,7 +432,7 @@ export default function LandingPage() {
           />
         )}
 
-        <div className="relative z-30">
+        <div className="relative z-30 min-w-0">
           <input
             ref={inputRef}
             type="text"
@@ -486,24 +486,27 @@ export default function LandingPage() {
           {showDrop && suggestions.length > 0 && (
             <div
               ref={dropRef}
-              className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto"
+              className="absolute inset-x-0 top-full mt-1.5 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden max-h-64 overflow-y-auto overscroll-contain"
+              style={{ zIndex: 40 }}
             >
               {suggestions.map((s, i) => (
                 <button
                   key={s.id}
                   onClick={() => pick(s)}
                   className={[
-                    'w-full flex items-center gap-3 px-4 py-3 text-left',
+                    'w-full flex items-center gap-3 px-4 py-3 text-left min-w-0',
                     'hover:bg-gray-50 active:bg-gray-100 transition-colors',
                     i > 0 ? 'border-t border-gray-100' : '',
                   ].join(' ')}
                 >
-                  <Avatar student={s} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-900 text-sm font-semibold truncate">{s.surname} {s.otherNames}</p>
-                    <p className="text-gray-500 text-xs truncate">{s.emailAddress}</p>
+                  <div className="shrink-0">
+                    <Avatar student={s} />
                   </div>
-                  <span className="shrink-0 text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium">
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p className="text-gray-900 text-sm font-semibold truncate leading-tight">{s.surname} {s.otherNames}</p>
+                    <p className="text-gray-500 text-xs truncate mt-0.5">{s.emailAddress}</p>
+                  </div>
+                  <span className="shrink-0 text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full font-semibold ml-1">
                     {buildRole(s.roleRank, s.emailStatus)}
                   </span>
                 </button>
