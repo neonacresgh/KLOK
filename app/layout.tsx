@@ -17,8 +17,8 @@ export const metadata: Metadata = {
   description: "A simple, lightweight student database management system with offline support",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icon-192x192.png",
-    apple: "/icon-192x192.png",
+    icon: "/logo/kloklogo.png",
+    apple: "/logo/kloklogo.png",
   },
 };
 
@@ -30,8 +30,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="theme-color" content="#0d1117" />
-        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+        <meta name="theme-color" content="#ffffff" />
+        <link rel="apple-touch-icon" href="/logo/kloklogo.png" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
