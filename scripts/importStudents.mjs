@@ -63,17 +63,26 @@ function parseCSV(csvPath) {
         if (!line) continue;
         const parts = parseCSVLine(line);
         if (parts.length < 7) continue;
+
+        const surname = parts[0] || '';
+        const otherNames = parts[1] || '';
         const email = parts[3].trim();
         if (!email) continue;
+
+        // Generate keywords for dynamic search (lowercase parts of the full name)
+        const nameParts = `${surname} ${otherNames}`.toLowerCase().split(/\s+/).filter(Boolean);
+        const searchKeywords = [...new Set(nameParts)];
+
         students.push({
             id: email,
-            surname: parts[0] || '',
-            otherNames: parts[1] || '',
+            surname: surname,
+            otherNames: otherNames,
             gender: parts[2] || 'Male',
             emailAddress: email,
             dateOfBirth: parts[4] || '',
             roleRank: parts[5] || '',
             emailStatus: parts[6] || 'No History',
+            searchKeywords: searchKeywords, // New field for dynamic search
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         });

@@ -324,15 +324,25 @@ export default function LandingPage() {
             results = rs.docs.map(d => ({ id: d.id, ...d.data() } as Student));
           }
         } else {
-          const surnamePrefix = trimmed.split(/\s+/)[0];
-          const rs = await getDocs(fsq(collection(db, 'students'), where('surname', '>=', surnamePrefix), where('surname', '<=', surnamePrefix + '\uf8ff'), orderBy('surname'), limit(10)));
-          const words = trimmed.split(/\s+/).filter(Boolean);
-          results = rs.docs
-            .map(d => ({ id: d.id, ...d.data() } as Student))
-            .filter(s => {
-              const full = `${s.surname} ${s.otherNames}`.toUpperCase();
+          const words = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
+          const firstWord = words[0];
+
+          // Use array-contains on the first word for broad matching
+          const rs = await getDocs(fsq(
+            collection(db, 'students'),
+            where('searchKeywords', 'array-contains', firstWord),
+            limit(20)
+          ));
+
+          results = rs.docs.map(d => ({ id: d.id, ...d.data() } as Student));
+
+          // If multiple words, refine locally for exact multi-word match
+          if (words.length > 1) {
+            results = results.filter(s => {
+              const full = `${s.surname} ${s.otherNames}`.toLowerCase();
               return words.every(w => full.includes(w));
             });
+          }
         }
 
         if (pickedRef.current) return; // student was picked while we were fetching
