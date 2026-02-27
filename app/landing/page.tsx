@@ -448,18 +448,8 @@ export default function LandingPage() {
             type="text"
             value={query}
             onChange={handleInput}
-            onFocus={(e) => {
+            onFocus={() => {
               if (suggestions.length > 0 && query.trim().length >= 2) setShowDrop(true);
-              // iOS keyboard fix: scroll input into view after keyboard opens
-              setTimeout(() => {
-                const el = e.target as HTMLInputElement;
-                if ('visualViewport' in window && window.visualViewport) {
-                  // Use visualViewport for accurate keyboard-aware positioning
-                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                } else {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-              }, 350);
             }}
             placeholder="Search by name or index number…"
             autoComplete="off"
@@ -467,7 +457,7 @@ export default function LandingPage() {
             inputMode="search"
             enterKeyHint="search"
             className="w-full bg-white border border-gray-300 text-gray-900 placeholder-gray-400
-                       text-sm sm:text-base font-semibold uppercase tracking-wide
+                       text-base sm:text-base font-semibold uppercase tracking-wide
                        px-5 pr-12 py-3.5 rounded-xl outline-none shadow-sm
                        focus:border-blue-500 focus:ring-1 focus:ring-blue-500
                        transition-all duration-150"

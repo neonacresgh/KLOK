@@ -3,14 +3,11 @@
 > Last updated: 2026-02-26 · Clear & Reseed run in progress
 
 ## Status
-
 | Item | Count |
 |---|---|
 | 📄 Total students in CSV (`students_data.csv`) | **33,138** |
-| 🗑️ Old (potentially duplicate) documents deleted | **4,659** |
-| ✅ Fresh clean records in Firebase (no duplicates) | **20,000** |
-| ⏳ Still to import | **13,138** |
-| 📦 Batches remaining (400/batch) | **~33 batches** |
+| ✅ Unique students in Firebase | **33,137** |
+| 🏁 Status | **Completed** |
 
 ## Why It Paused
 
