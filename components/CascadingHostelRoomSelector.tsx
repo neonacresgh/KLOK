@@ -75,7 +75,7 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
           return;
         } catch { /* ignore invalid cache */ }
       }
-      
+
       // Fetch from file
       console.log('Loading rooms from file...');
       try {
@@ -245,8 +245,7 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
             if (filteredRooms.length === 1) {
               handleRoomSelect(filteredRooms[0]);
             }
-            // Blur input to hide keyboard on mobile
-            (e.target as HTMLInputElement).blur();
+            // Don't blur input - keep keyboard open for continued typing
           }
         }}
         inputMode="numeric"
@@ -254,7 +253,7 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
-        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm font-semibold text-gray-800 placeholder-gray-400 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
+        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-base font-semibold text-gray-800 placeholder-gray-400 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all"
       />
     </div>
   );

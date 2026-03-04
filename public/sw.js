@@ -1,4 +1,4 @@
-const CACHE = 'klok-v2';
+const CACHE = 'klok-v3';
 
 // Core app shell resources to cache on install
 const PRECACHE = [
@@ -26,11 +26,13 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
     const url = new URL(e.request.url);
 
-    // Always fetch Firestore API calls from network (let Firestore SDK handle offline)
-    if (url.hostname.includes('firestore.googleapis.com') ||
+    // Skip cache for API calls - always go to network
+    if (url.pathname.startsWith('/api/') ||
+        url.hostname.includes('firestore.googleapis.com') ||
         url.hostname.includes('firebase') ||
+        url.hostname.includes('upsahostels.com') ||
         url.hostname.includes('upsasip.com')) {
-        return; // let browser/Firestore SDK handle these
+        return; // let browser handle these directly
     }
 
     // Cache-first for everything else (app shell, JS, CSS)

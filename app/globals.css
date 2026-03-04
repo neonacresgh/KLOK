@@ -15,3 +15,20 @@ body {
 * {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Prevent zoom on input focus for iOS */
+input:focus,
+select:focus,
+textarea:focus {
+  font-size: 16px !important;
+}
+
+/* Also prevent zoom on mobile for any element that triggers keyboard */
+@supports (-webkit-touch-callout: none) {
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
