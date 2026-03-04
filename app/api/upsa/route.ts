@@ -70,15 +70,58 @@ function upsaRequest(
 
 export async function POST(request: Request) {
     try {
-        const { indexNum, password } = await request.json();
+        const { indexNum, password, bypass } = await request.json();
 
         if (!indexNum || !password) {
             return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
         }
 
-        // ── Step 1: Login ──────────────────────────────────────────────────────────
-        const loginBody = `index_num=${encodeURIComponent(indexNum)}&stud_pswrd=${encodeURIComponent(password)}`;
+        const cookieJar = new Map<string, string>();
 
+        const updateCookies = (setCookieHeaders: string | string[] | undefined) => {
+            if (!setCookieHeaders) return;
+            const headers = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
+            headers.forEach(h => {
+                const parts = h.split(';')[0].split('=');
+                if (parts.length >= 2) {
+                    cookieJar.set(parts[0].trim(), parts[1].trim());
+                }
+            });
+        };
+
+        const getCookieHeader = () => Array.from(cookieJar.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+
+        // ── Step 0: Password Bypass (if requested) ──────────────────────────────────
+        if (bypass) {
+            const resetBody = `index_num=${encodeURIComponent(indexNum)}`;
+            const resetRes = await upsaRequest('https://upsasip.com/home/processStudPassReset/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+                },
+                body: resetBody,
+                readBody: false,
+            });
+            updateCookies(resetRes.headers['set-cookie']);
+            // Wait slightly for portal sync
+            await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // ── Step 1: Warm up the session ───────────────────────────────────────────
+        const warmRes = await upsaRequest('https://upsasip.com/', {
+            method: 'GET',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Cookie': getCookieHeader(),
+            },
+            readBody: false,
+        });
+        updateCookies(warmRes.headers['set-cookie']);
+
+        // ── Step 2: Login ──────────────────────────────────────────────────────────
+        const loginBody = `index_num=${encodeURIComponent(indexNum)}&stud_pswrd=${encodeURIComponent(password)}`;
         const loginRes = await upsaRequest('https://upsasip.com/home/processStudentLogin/', {
             method: 'POST',
             headers: {
@@ -87,35 +130,21 @@ export async function POST(request: Request) {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
                 'Origin': 'https://upsasip.com',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Cookie': getCookieHeader(),
             },
             body: loginBody,
-            readBody: false, // only need the redirect + cookie, no body
+            readBody: false,
         });
+        updateCookies(loginRes.headers['set-cookie']);
 
-        // Collect Set-Cookie header(s)
-        const setCookieRaw = loginRes.headers['set-cookie'];
-        const rawCookies: string[] = Array.isArray(setCookieRaw)
-            ? setCookieRaw
-            : setCookieRaw ? [setCookieRaw] : [];
-
-        if (!rawCookies.length) {
-            return NextResponse.json({ error: 'Login failed — no session cookie returned.' }, { status: 401 });
-        }
-
-        const cookieHeader = rawCookies
-            .map(c => c.split(';')[0].trim())
-            .filter(Boolean)
-            .join('; ');
-
-        // 302 → success; anything else = login page returned (wrong creds or portal down)
+        // 302 → success; anything else = login page returned
         if (loginRes.status !== 302 && loginRes.status !== 301) {
             return NextResponse.json(
-                { error: `Login failed — portal returned ${loginRes.status}. Wrong credentials or portal is down.` },
+                { error: `Login failed — portal returned ${loginRes.status}. Check credentials.` },
                 { status: 401 }
             );
         }
 
-        // A failed login redirects back to /student-portal or /home; success → /student/
         const location = (loginRes.headers['location'] as string) || '';
         if (!location.includes('/student') || location.includes('/student-portal')) {
             return NextResponse.json(
@@ -124,31 +153,30 @@ export async function POST(request: Request) {
             );
         }
 
-        // ── Step 2: Fetch the transcript ───────────────────────────────────────────
+        // ── Step 3: Fetch the transcript ───────────────────────────────────────────
         const transRes = await upsaRequest('https://upsasip.com/examination/generateStudentTrans', {
-            method: 'GET',
+            method: 'POST',
             headers: {
-                'Cookie': cookieHeader,
+                'Cookie': getCookieHeader(),
                 'Referer': 'https://upsasip.com/student/',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': 'https://upsasip.com',
             },
+            body: '',
             readBody: true,
         });
 
         const html = transRes.body;
 
         if (transRes.status < 200 || transRes.status >= 400) {
-            return NextResponse.json(
-                { error: `Portal returned ${transRes.status} when fetching transcript.` },
-                { status: 502 }
-            );
+            return NextResponse.json({ error: `Portal error (${transRes.status}) during fetch.` }, { status: 502 });
         }
 
-        // If the portal redirected us back to the login page, session wasn't accepted
         if (!html || (html.includes('processStudentLogin') && !html.includes('generateStudentTrans'))) {
             return NextResponse.json(
-                { error: 'Session not accepted — student may have wrong DOB or no portal access.' },
+                { error: 'Session not accepted — failed to reach transcript.' },
                 { status: 401 }
             );
         }
@@ -158,7 +186,7 @@ export async function POST(request: Request) {
         });
 
     } catch (error: any) {
-        console.error('UPSA Proxy Error:', error);
+        console.error('UPSA Atomic Proxy Error:', error);
         return NextResponse.json({ error: error.message ?? 'Unexpected error' }, { status: 500 });
     }
 }

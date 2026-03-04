@@ -7,6 +7,7 @@ export interface Student {
   dateOfBirth: string;
   roleRank: string;
   emailStatus: 'Active' | 'Inactive' | 'Pending';
+  program?: string;
   createdAt: string;
   updatedAt: string;
 }

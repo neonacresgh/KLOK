@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KLOK Student Management System",
+  title: "KLOK",
   description: "A simple, lightweight student database management system with offline support",
   manifest: "/manifest.json",
   icons: {

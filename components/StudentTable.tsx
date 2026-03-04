@@ -25,9 +25,9 @@ export default function StudentTable({ students, onEdit, onDelete, onRefresh }: 
   };
 
   const sortedStudents = [...students].sort((a, b) => {
-    const aValue = a[sortField];
-    const bValue = b[sortField];
-    
+    const aValue = a[sortField] as any;
+    const bValue = b[sortField] as any;
+
     if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
     return 0;
@@ -57,7 +57,7 @@ export default function StudentTable({ students, onEdit, onDelete, onRefresh }: 
           </button>
         </div>
       </div>
-      
+
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">

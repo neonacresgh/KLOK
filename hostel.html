@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en-US" class="h-100">
+
+<head>
+    <title>UPSA-HMS</title>
+    <meta name="csrf-param" content="_csrf-frontend">
+<meta name="csrf-token" content="kL7NPYJzdkWdhbpqIK1WeZmnY-m8_1A1DwM1zz-1adv495hnszlGfdW93TB2mRAvrsEzjunMMgdZckWVTvAxow==">
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="description" content="">
+<meta name="keywords" content="">
+<link type="image/x-icon" href="/favicon.ico" rel="icon">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/ionicons/2.0.1/css/ionicons.min.css" rel="stylesheet">
+<link href="/assets/ba2442e7/css/bootstrap.css" rel="stylesheet">
+<link href="/assets/8cdf8054/dist/css/AdminLTE.css" rel="stylesheet">
+<link href="/assets/8cdf8054/dist/css/skins/_all-skins.css" rel="stylesheet">
+<link href="/assets/8cdf8054/dist/css/common.css" rel="stylesheet">
+<script src="/assets/7b516024/javascript/logger.js"></script>
+<!--[if lt IE 9]>
+<script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+<![endif]-->
+<!--[if lt IE 9]>
+<script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+<![endif]-->
+<!--[if lt IE 9]>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+<![endif]-->
+<script>window.auditUrl = '/index.php?r=audit%2Fjs-log%2Findex';window.auditEntry = 3224120;</script>    
+<style>
+
+div.transbox {
+  margin: 10px;
+  background-color: #ffffff;
+  border: 0px solid black;
+  opacity: 0.6;
+}
+
+div.transbox p {
+  margin: 1%;
+  font-weight: bold;
+ 
+  color: #000000;
+}
+
+.overlay {
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    position: relative;
+    
+}
+.section-bg {
+    background-size: cover;
+    position: relative;
+    background-position: left;
+    z-index: 0;
+    padding: 0;
+    min-height: auto;
+    overflow: hidden;
+}
+.contact-form {
+    position: relative;
+    padding: 45px 0 45px 60px;
+}
+
+.contact-form:before {
+    position: absolute;
+    content: '';
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: 6px;
+    background: #ffffff;
+    box-shadow: 10px 40px 40px rgba(0,0,0,.2);
+    pointer-events: none;
+    right: auto;
+    width: 100vw;
+}
+.particles-js-canvas-el {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 1;
+}
+.contact-form input {
+    border: 0;
+    background: transparent;
+
+    display: block;
+    width: 100%;
+    min-height: 50px;
+    padding: 11px 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 27px;
+
+    background-color: transparent;
+    background-image: none;
+    border-radius: 0;
+    -webkit-appearance: none;
+    transition: .3s ease-in-out;
+    border: 2px solid transparent;
+    border-bottom-color: rgba(0,0,0,.1);
+}
+
+.contact-form textarea {
+    border: 0;
+    background: transparent;
+    display: block;
+    width: 100%;
+    min-height: 50px;
+    padding: 11px 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 27px;
+
+    background-color: transparent;
+    background-image: none;
+    border-radius: 0;
+    -webkit-appearance: none;
+    transition: .3s ease-in-out;
+    border: 2px solid transparent;
+    border-bottom-color: rgba(0,0,0,.1);
+}
+.contact-form input::placeholder {
+  color:#222;
+}
+.contact-form textarea::placeholder {
+  color:#222;
+
+}
+.contact-form input {
+    margin-bottom: 30px;
+    font-size: 16px;
+    font-weight: 600;
+    height: 55px;
+}
+.contact-form input:hover, .contact-form input:focus{
+    outline: none;
+    box-shadow: none;
+    background: transparent;
+    border: 2px solid transparent;
+    border-bottom-color: rgb(254, 132, 111);
+
+}
+.contact-form textarea:hover, .contact-form textarea:focus{
+  background: transparent; 
+    outline: none;
+  box-shadow: none;
+     border: 2px solid transparent;
+    border-bottom-color: rgb(254, 132, 111);
+
+}
+
+
+.taso-btn {
+    background-color: #fff;
+    margin: 25px 0;
+    color: #214dcb;
+    -webkit-box-shadow: 0px 10px 30px 0px rgba(255, 255, 255, 0.32);
+    box-shadow: 0px 10px 30px 0px rgba(255, 255, 255, 0.17);
+}
+.contact-info {
+    padding: 0 30px 0px 0;
+}
+
+h2.contact-title {
+    font-size: 35px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 30px;
+}
+
+.contact-info p {
+    color: #ececec;
+}
+
+ul.contact-info {
+    margin-top: 30px;
+}
+
+ul.contact-info li {
+    margin-bottom: 22px;
+}
+
+
+
+ul.contact-info span {
+    font-size: 20px;
+    line-height: 26px;
+}
+ul.contact-info li {
+    display: flex;
+    width: 100%;
+}
+
+.info-left {
+    width: 10%;
+}
+
+.info-left i {
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    font-size: 30px;
+    color: #ffffff;
+}
+
+.info-right h4 {
+    color: #fff;
+    font-size: 18px;
+}
+.contact-page .info-left i{
+color: #FE846F;
+}
+.btn {
+display: inline-block;
+    font-weight: 400;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: middle;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    font-family: 'Poppins', sans-serif;
+    padding: 10px 30px 10px;
+    font-size: 17px;
+    line-height: 28px;
+    border: 0px;
+    border-radius: 10px;
+    -webkit-transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, -webkit-box-shadow 0.15s ease-in-out;
+    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, -webkit-box-shadow 0.15s ease-in-out;
+    -o-transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out, -webkit-box-shadow 0.15s ease-in-out;
+}
+.btn-big {
+    color: #ffffff;
+    -webkit-box-shadow: 0px 5px 20px 0px rgba(45, 45, 45, 0.47843137254901963);
+    box-shadow: 2px 5px 10px 0px rgba(45, 45, 45, 0.19);
+    color: #fff !important;
+    margin-right: 20px;
+    background: #FE846F;
+    transition: .2s;
+    border: 2px solid #FE846F;
+    margin-top: 50px;
+}
+
+@media only screen and (max-width: 767px) {
+.contact-form {
+    padding: 30px;
+}
+.contact-form:before {
+    width: 100%;
+}
+
+}
+</style>
+    
+    
+</head>
+<body class="d-flex flex-column h-100"   >
+
+
+<div class="section-bg  flex-shrink-0" role="main" style="height: 100%"  >
+     <div class="overlay pt-100 pb-100 "  >
+
+    <div class="container">
+
+        <style>
+:root {
+  --primary-color: #010712;
+  --secondary-color: #818386;
+  --bg-color: #FCFDFD;
+  --button-color: #3B3636;
+  --h1-color: #3F444C;
+}
+
+[data-theme="dark"] {
+  --primary-color: #FCFDFD;
+  --secondary-color: #818386;
+  --bg-color: #010712;
+  --button-color: #818386;
+  --h1-color: #FCFDFD;
+}
+
+* {
+  margin: 0;
+  box-sizing: border-box;
+  transition: all 0.3s ease-in-out;
+}
+
+.contact-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-color);
+}
+
+.left-col {
+  width: 45vw;
+  height: 100%;
+  background-image: url("https://images.pexels.com/photos/931018/pexels-photo-931018.jpeg?auto=compress&cs=tinysrgb&dpr=2&w=500");
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.right-col {
+  background: var(--bg-color);
+  width: 50vw;
+  height: 100vh;
+  padding: 1rem 3.5rem;
+}
+
+h1, label, button, .description {
+  font-family: 'Jost', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.1rem;
+}
+
+h1 {
+  color:var(--h1-color);
+  text-transform: uppercase;
+  font-size: 2.0rem;
+  letter-spacing: 0.3rem;
+  font-weight: 300;
+}
+
+p {
+  color: var(--secondary-color);
+  font-size: 0.9rem;
+  letter-spacing: 0.01rem;
+  width: 90%;
+  margin: 0.25rem 0;
+}
+
+label, .description {
+  color: var(--secondary-color);
+  text-transform: uppercase;
+  font-size: 1.2rem;
+}
+
+form {
+  width: 100%;
+  position: relative;
+  margin-top: 2rem;
+  padding: 1rem 0;
+}
+
+input, textarea, label, select {
+  width: 95%;
+  display: block;
+}
+
+p, placeholder, input, textarea {
+  font-family: 'Helvetica Neue', sans-serif;
+}
+
+input::placeholder, textarea::placeholder , select::placeholder{
+  color: var(--primary-color);
+}
+
+input, textarea ,select{
+  color: var(--primary-color);
+  font-weight: 500;
+  background: var(--bg-color);
+  border: none;
+  border-bottom: 1px solid var(--secondary-color);
+  padding: 0.5rem 0;
+  margin-bottom: 1rem;
+  outline: none;
+}
+
+textarea {
+  resize: none;
+}
+
+// button {
+//   text-transform: uppercase;
+//   font-weight: 300;
+//   background: var(--button-color);
+//   color: var(--bg-color);
+//   width: 20rem;
+//   height: 2.8rem;
+//   border: none;
+//   border-radius: 3px;
+//   outline: none;
+//   cursor: pointer;
+// }
+
+input:hover, textarea:hover{
+  opacity: 0.5;
+}
+
+// button:active {
+//   opacity: 0.8;
+// }
+
+/* Toggle Switch */
+
+.theme-switch-wrapper {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  width: 160px;
+  position: absolute;
+  top: 0.5rem;
+  right: 0;
+}
+
+.description {
+    margin-left: 1.25rem;
+  }
+
+.theme-switch {
+  display: inline-block;
+  height: 34px;
+  position: relative;
+  width: 60px;
+}
+
+.theme-switch input {
+  display:none;
+}
+
+.slider {
+  background-color: #ccc;
+  bottom: 0;
+  cursor: pointer;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: .4s;
+}
+
+.slider:before {
+  background-color: #fff;
+  bottom: 0.25rem;
+  content: "";
+  width: 26px;
+  height: 26px;
+  left: 0.25rem;
+  position: absolute;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: var(--button-color);
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+.slider.round {
+  border-radius: 34px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+#error, #success-msg {
+  width: 40vw;
+  margin: 0.125rem 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-family: 'Jost';
+  color: var(--secondary-color);
+  }
+}
+
+  #success-msg {
+  transition-delay: 3s;
+  }
+
+@media only screen and (max-width: 950px) {
+  .logo {
+    width: 8rem;
+  }
+  h1 {
+    font-size: 1.75rem;
+  }
+  p {
+    font-size: 0.7rem;
+  }
+  input, textarea, button {
+    font-size: 0.65rem;
+  }
+  .description {
+    font-size: 0.3rem;
+    margin-left: 0.4rem;
+  }
+  button {
+    width: 9rem;
+  }
+  .theme-switch-wrapper {
+    width: 120px;
+  }
+  .theme-switch {
+  height: 28px;
+  width: 50px;
+}
+
+.theme-switch input {
+  display:none;
+}
+
+.slider:before {
+  background-color: #fff;
+  bottom: 0.25rem;
+  content: "";
+  width: 20px;
+  height: 20px;
+  left: 0.25rem;
+  position: absolute;
+  transition: .4s;
+}
+  input:checked + .slider:before {
+  transform: translateX(16px);
+}
+
+.slider.round {
+  border-radius: 15px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+}
+</style>
+
+
+
+<div class="site-login">
+
+    <div class="row">
+
+<div class="contact-container">
+<div class="col-lg-12" style="
+    background-image: url(https://images.pexels.com/photos/931018/pexels-photo-931018.jpeg?auto=compress&cs=tinysrgb&dpr=2&w=500);
+  background-size: cover;
+  background-repeat: no-repeat;margin-right:1%;width:40%;
+">
+  <div class="col-lg-12"  >
+  </div>
+</div>
+<div class="col-lg-12" >
+  <div class="col-lg-6">
+<div class="theme-switch-wrapper">
+</div>
+    <div style="text-align: center;margin-top:30%;margin-bottom:2%">
+    <img class="logo" src="https://upsa.edu.gh/wp-content/uploads/2023/03/upsa-logo-new.png" width="35%" />
+     <h2>Hostel Login Form</h2>
+<p ><center><h4>Sign in to your Hostel Manager.</h4></center></p>
+    </div>
+   
+    
+    <form id="LoginForm" class="" action="/index.php?r=site/login" method="post">
+<input type="hidden" name="_csrf-frontend" value="kL7NPYJzdkWdhbpqIK1WeZmnY-m8_1A1DwM1zz-1adv495hnszlGfdW93TB2mRAvrsEzjunMMgdZckWVTvAxow==">    
+      <label for="username">Username</label>
+  <input type="text" id="username" name="username" placeholder="Your Student Index Number  eg. 1020XXXX"    autofocus      required>
+      
+
+    <label for="password">Your Portal Password</label>
+  <input type="password" id="password" name="password"  placeholder="Your Portal Password" required>
+      
+
+     
+      <div class="col-lg-12" style="font-size:18px;margin-top:2%">
+    <div class="col-lg-6"> 
+     <button type="submit" class="btn btn-primary btn-block btn-flat" name="login-button">Sign In</button>    </div>
+        <div class="col-lg-6"><a href="/index.php?r=site%2Frequestpasswordreset">Reset My Password</a></div>
+  
+  
+</div>
+ </form> 
+
+      </div>
+<div id="error"></div>
+<div id="success-msg"></div>
+  </div>
+</div>
+
+    </div>
+</div>
+    </div>
+         </div>
+</div>
+
+
+            
+    <footer class="main-footer" style="text-align:center">
+        <center> <strong>Copyright &copy; 2026 <a href="http://www.upsa.edu.gh">University of Professional Studies, Accra</a>.</strong> All rights reserved.<center>  </div>
+</footer>
+
+<script src="/assets/40d115e6/jquery.js"></script>
+<script src="/assets/13758c90/yii.js"></script>
+<script src="/assets/13758c90/yii.activeForm.js"></script>
+<script src="/assets/ba2442e7/js/bootstrap.js"></script>
+<script src="/assets/8cdf8054/plugins/fastclick/fastclick.min.js"></script>
+<script src="/assets/8cdf8054/plugins/slimScroll/jquery.slimscroll.min.js"></script>
+<script src="/assets/8cdf8054/plugins/bootbox/bootbox.min.js"></script>
+<script src="/assets/8cdf8054/dist/js/app.js"></script>
+<script src="/assets/8cdf8054/dist/js/yii-override.js"></script>
+<script src="/assets/8cdf8054/dist/js/common.js"></script>
+<script>jQuery(function ($) {
+jQuery('#LoginForm').yiiActiveForm([], []);
+});</script></body>
+</html>

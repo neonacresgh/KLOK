@@ -69,9 +69,27 @@ function parseCSV(csvPath) {
         const email = parts[3].trim();
         if (!email) continue;
 
-        // Generate keywords for dynamic search (lowercase parts of the full name)
+        // Generate keywords for dynamic search (prefixes of all name parts)
         const nameParts = `${surname} ${otherNames}`.toLowerCase().split(/\s+/).filter(Boolean);
-        const searchKeywords = [...new Set(nameParts)];
+        const searchKeywords = new Set();
+        for (const word of nameParts) {
+            let prefix = '';
+            for (const char of word) {
+                prefix += char;
+                searchKeywords.add(prefix);
+            }
+        }
+
+        // Let's also add the full continuous string without spaces as a prefix path 
+        // to support searching full names without spaces if needed (optional, but robust)
+        const fullString = nameParts.join('');
+        let fullPrefix = '';
+        for (const char of fullString) {
+            fullPrefix += char;
+            searchKeywords.add(fullPrefix);
+        }
+
+        const searchKeywordsArray = [...searchKeywords];
 
         students.push({
             id: email,
@@ -82,7 +100,7 @@ function parseCSV(csvPath) {
             dateOfBirth: parts[4] || '',
             roleRank: parts[5] || '',
             emailStatus: parts[6] || 'No History',
-            searchKeywords: searchKeywords, // New field for dynamic search
+            searchKeywords: searchKeywordsArray, // New field for dynamic search
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         });
@@ -111,19 +129,23 @@ async function commitBatchWithRetry(batch, batchNo, totalBatches) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
+    // Get starting index from command line argument (default: 0)
+    const startIndex = parseInt(process.argv[2]) || 0;
+
     const csvPath = resolve(__dirname, '../students_data.csv');
     console.log(`\n📂 Reading: ${csvPath}`);
 
     const students = parseCSV(csvPath);
     const total = students.length;
     const totalBatches = Math.ceil(total / BATCH_SIZE);
-    console.log(`📊 Parsed ${total.toLocaleString()} students — ${totalBatches} batches of ${BATCH_SIZE}\n`);
+    console.log(`📊 Parsed ${total.toLocaleString()} students — ${totalBatches} batches of ${BATCH_SIZE}`);
+    console.log(`🚀 Starting from index: ${startIndex.toLocaleString()}\n`);
 
     let committed = 0;
     const startTime = Date.now();
 
-    for (let i = 0; i < students.length; i += BATCH_SIZE) {
-        const batchNo = Math.floor(i / BATCH_SIZE) + 1;
+    for (let i = startIndex; i < students.length; i += BATCH_SIZE) {
+        const batchNo = Math.floor((i - startIndex) / BATCH_SIZE) + 1;
         const chunk = students.slice(i, i + BATCH_SIZE);
         const batch = writeBatch(db);
 

@@ -1,0 +1,126 @@
+<style>
+body {font-family: Arial, Helvetica, sans-serif;}
+
+/* The Modal (background) */
+.modal {
+    display: none; /* Hidden by default */
+  /*  position: fixed;  Stay in place */
+  /*  z-index: 1; /* Sit on top */
+  /*  left: 40%;
+    top: 40%; */
+    margin: 0 auto;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgb(0,0,0); /* Fallback color */
+    background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+    -webkit-animation-name: fadeIn; /* Fade in the background */
+    -webkit-animation-duration: 0.4s;
+    animation-name: fadeIn;
+    animation-duration: 0.4s
+}
+
+/* Modal Content */
+.modal-content {
+  /*  position: fixed;
+    bottom: 0;*/
+    margin: 1% auto;
+    background-color: #fefefe;
+    width: 50%;
+    -webkit-animation-name: slideIn;
+    -webkit-animation-duration: 0.4s;
+    animation-name: slideIn;
+    animation-duration: 0.4s
+}
+
+/* The Close Button */
+.close {
+    color: white;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+    color: #000;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.modal-header {
+    padding: 0px 0px;
+    background-color: #5B74B8;
+    color: white;
+}
+
+.modal-body {padding: 2px 16px;}
+
+.modal-footer {
+    padding: 2px 16px;
+    background-color: #5B74B8;
+    color: white;
+}
+
+/* Add Animation */
+@-webkit-keyframes slideIn {
+    from {bottom: -300px; opacity: 0}
+    to {bottom: 0; opacity: 1}
+}
+
+@keyframes slideIn {
+    from {bottom: -300px; opacity: 0}
+    to {bottom: 0; opacity: 1}
+}
+
+@-webkit-keyframes fadeIn {
+    from {opacity: 0}
+    to {opacity: 1}
+}
+
+@keyframes fadeIn {
+    from {opacity: 0}
+    to {opacity: 1}
+}
+</style>
+
+
+
+  
+<div id="modal" class="fade modal" role="dialog" tabindex="-1">
+<div class="modal-dialog modal-lg">
+<div class="modal-content">
+<div class="modal-header">
+<button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+<h5></h5>
+</div>
+<div class="modal-body">
+<div id='modalContent'></div>
+</div>
+
+</div>
+</div>
+</div>
+  <!DOCTYPE html>
+  <html lang="en-US">
+  <head>
+      <meta charset="UTF-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="viewport" content="width=device-width, initial-scale=1,
+              maximum-scale=1, user-scalable=no">
+
+      <title>Payment Verification</title>
+      <![CDATA[YII-BLOCK-HEAD]]>      <link href="upsa-hms/frontend/web/dist/css/select2.min.css" rel="stylesheet"/>
+    <script src="upsa-hmd/frontend/web/dist/js/select2.js"></script>
+   
+  </head>
+     <body style="padding-top:10%">
+           <center> <a href="" class="logo" >
+           <span class="logo-lg" ><img src="/images/upsa_logo.png" width="20%;" height="15%" alt=""> </span>
+       </a></center>
+       <center><h1>Sorry !!, There was no Connection found !!</h1></center>
+        <center><h3><div>Please Login from Your Portal.</div><h3>
+        </center>
+
+     </body>
+   </html>

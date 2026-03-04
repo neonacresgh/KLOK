@@ -1,0 +1,122 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <link rel="shortcut icon" href="/images/favicon.ico">
+    <title>Student Portal | UPSA</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+    <link href="/css/style.css" rel="stylesheet" type="text/css">
+    <link href="/Themes/Kantua/styles.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="/assets/css/fontawesome/font-awesome.min.css">
+
+
+        <script>
+        function get_base_url(){
+            var base_url = '/';
+            return base_url;
+        }
+
+        function base_url(){
+            return '/';
+        }
+    </script>
+    <script language="JavaScript" type="text/javascript" src="/js/jquery-1.4.2.js"></script>
+    <script type="text/javascript">
+        var _gaq = _gaq || [];
+        _gaq.push(['_setAccount', 'UA-29591608-1']);
+        _gaq.push(['_trackPageview']);
+
+        (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+        })();
+
+        function base_url(){
+            return '/';
+        }
+        
+
+
+
+    </script>
+</head>
+<body class="body-bg-full profile-page" style="background-image: url(../../images/bg1.jpg)">
+
+<div id="wrapper" class="row wrapper">
+    <style>
+    .profile-page .login-center {
+             min-height: 400px;
+         }
+    .display-success{
+        width: 300px;
+        border: 1px solid #D8D8D8;
+        padding: 10px;
+        border-radius: 5px;
+        font-family: Arial;
+        font-size: 11px;
+        text-transform: uppercase;
+        background-color: rgb(236, 255, 216);
+        color: green;
+        text-align: center;
+        margin-top: 30px;
+        margin-bottom: 20px;
+    }
+</style>
+
+
+
+<div style="margin-top: 100px" class="col-10 ml-sm-auto col-sm-6 col-md-4 ml-md-auto login-center mx-auto">
+    <div style="margin-bottom: 50px" class="navbar-header text-center">
+        <a href="">
+            <img width="200px" alt="" src="/images/logo.png">
+        </a>
+    </div>
+    <h1 style="text-align: center; font-size: 25px; margin-top: -30px; padding-bottom: 30px">Welcome to UPSA Student Portal</h1>
+            <!-- /.navbar-header -->
+    <form class="form-material" id="login-form" action="/home/processStudentLogin/" method="post" >
+        <div class="form-group">
+            <input type="text" class="form-control form-control-line" placeholder="Index Number" name="index_num" id="index_num" ><!--readonly = "readonly"-->
+            <label for="example-email">Index Number</label>
+        </div>
+        <div class="form-group">
+            <input type="password" placeholder="Date of Birth eg.31-12-1970" name="stud_pswrd" class="form-control form-control-line"><!--readonly = "readonly"-->
+            <label>Password</label>
+        </div>
+        <div class="form-group">
+            <button name="button" class="btn btn-block btn-lg btn-color-scheme ripple" type="submit">Login</button>
+        </div>
+        <div style="padding-bottom: 50px" class="form-group no-gutters mb-0">
+            <div class="col-md-12 d-flex">
+
+                <a href="/home/studPassReset/" id="to-recover" class="my-auto pb-2 text-right"><i class="fa fa-lock mr-1"></i>Forgot Password?</a>
+            </div>
+            <!-- /.row -->
+        </div>
+        <!-- /.form-group -->
+    </form>
+    <div class="loader">
+        <h2 class="login-title">Proccessing . . .</h2>
+        <span><img src="/images/ajax-loader2.gif" /></span>
+    </div>
+    <div class="message">
+        <h2 class="login-title">Login Failed</h2>
+        <span><a class="relogin" href="#">Click here to login again</a></span>
+    </div>
+</div>
+
+
+</div>
+
+
+<script type="text/javascript" src="/assets/js/libs/jquery-1.10.2.min.js"></script>
+<script language="JavaScript" type="text/javascript" src="/js/login.js"></script>
+
+<script type="text/javascript" src="/assets/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="/js/material-design.js"></script>
+
+<script language="JavaScript" type="text/javascript" src="/js/shared.js"></script>
+
+
+</body>
+</html>
+

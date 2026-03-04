@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface SearchFiltersProps {
   onSearch: (query: string, filters: {
@@ -18,6 +18,19 @@ export default function SearchFilters({ onSearch, onClear }: SearchFiltersProps)
     emailStatus: '',
     roleRank: '',
   });
+
+  // Debounced search - triggers automatically as user types
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onSearch(query, {
+        gender: filters.gender || undefined,
+        emailStatus: filters.emailStatus || undefined,
+        roleRank: filters.roleRank || undefined,
+      });
+    }, 300); // 300ms debounce delay
+
+    return () => clearTimeout(timer);
+  }, [query, filters, onSearch]);
 
   const handleSearch = () => {
     onSearch(query, {
