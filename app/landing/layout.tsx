@@ -10,5 +10,10 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return (
+    <>
+      <link rel="preload" href="/hostel_rooms.json" as="fetch" crossOrigin="anonymous" />
+      {children}
+    </>
+  );
 }

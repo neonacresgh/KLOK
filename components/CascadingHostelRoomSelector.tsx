@@ -62,12 +62,37 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // Load all rooms once
+  // Load all rooms once (with localStorage cache for instant load)
   useEffect(() => {
-    fetch('/hostel_rooms.json')
-      .then((res) => res.json())
-      .then((data) => setRooms(data))
-      .catch((err) => console.error('Failed to load rooms:', err));
+    const loadRooms = async () => {
+      // Try localStorage first for instant load
+      const cached = localStorage.getItem('klok-hostel-rooms');
+      if (cached) {
+        try {
+          const data = JSON.parse(cached);
+          setRooms(data);
+          console.log('Rooms loaded from cache:', data.length);
+          return;
+        } catch { /* ignore invalid cache */ }
+      }
+      
+      // Fetch from file
+      console.log('Loading rooms from file...');
+      try {
+        const res = await fetch('/hostel_rooms.json');
+        const data = await res.json();
+        setRooms(data);
+        console.log('Rooms loaded from file:', data.length);
+        // Cache for future instant loads
+        try {
+          localStorage.setItem('klok-hostel-rooms', JSON.stringify(data));
+          console.log('Rooms cached to localStorage');
+        } catch (e) { console.warn('Failed to cache rooms:', e); }
+      } catch (err) {
+        console.error('Failed to load rooms:', err);
+      }
+    };
+    loadRooms();
   }, []);
 
   // Filter rooms by hostel + search
