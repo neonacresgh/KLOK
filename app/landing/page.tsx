@@ -101,11 +101,17 @@ const toUfisDOB = (raw: string): string => {
 // ─── Auto-login launchers ─────────────────────────────────────────────────────
 // Student Portal: real auto-submit via hidden POST form opened in new tab
 const launchStudentPortal = (indexNum: string, dob: string) => {
+  // Try window.open first (works on desktop)
   const w = window.open('about:blank', '_blank');
   if (!w) {
-    // Popup blocked — fallback: copy + open
+    // Popup blocked - fallback: copy credentials and open portal directly
+    console.log('Popup blocked, using fallback for student portal');
     navigator.clipboard.writeText(`${indexNum}\n${dob}`).catch(() => { });
-    window.open('https://upsasip.com/student-portal', '_blank', 'noopener');
+    const opened = window.open('https://upsasip.com/student-portal', '_blank');
+    if (!opened) {
+      // Last resort: just open the portal
+      window.location.href = 'https://upsasip.com/student-portal';
+    }
     return;
   }
   w.document.write(`<!DOCTYPE html>
@@ -146,15 +152,29 @@ const launchHostelPortal = async (indexNum?: string, dob?: string, onStart?: () 
 
     if (!res.ok) {
       alert('Hostel login failed. Invalid credentials or portal down.');
+      onEnd?.();
       return;
     }
 
-    const html = await res.text();
+    // Try to get the portal URL from response
+    try {
+      const data = await res.json();
+      if (data.url) {
+        // Open directly to the hostel portal
+        window.open(data.url, '_blank');
+        onEnd?.();
+        return;
+      }
+    } catch {
+      // If JSON parsing fails, try HTML response
+    }
 
-    // Open a new window and render the proxy's session-forwarding HTML
+    // Fallback: open a new window and render the proxy's session-forwarding HTML
+    const html = await res.text();
     const w = window.open('about:blank', '_blank');
     if (!w) {
       alert('Popup blocker prevented opening the Hostel portal.');
+      onEnd?.();
       return;
     }
     w.document.write(html);
@@ -1472,6 +1492,7 @@ export default function LandingPage() {
                     setIsResetting(true);
                     try {
                       // Reset the password first
+                      console.log('Attempting password reset for:', idx);
                       const resetRes = await fetch('/api/v1/password-reset', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1480,19 +1501,21 @@ export default function LandingPage() {
 
                       if (!resetRes.ok) {
                         const err = await resetRes.json();
+                        console.error('Password reset failed:', err);
                         alert(err.error || 'Password reset failed. Please try again.');
                         setIsResetting(false);
                         return;
                       }
 
+                      console.log('Password reset successful, opening portal...');
                       // Small delay to allow portal to process the reset
                       await new Promise(r => setTimeout(r, 1500));
 
                       // Now open the portal and login with DOB
                       launchStudentPortal(idx, toStudentPortalDOB(dob));
                     } catch (e) {
-                      console.error('Bypass login failed', e);
-                      alert('Login failed. Please try again.');
+                      console.error('Bypass login error:', e);
+                      alert('Login failed. Please try again. Make sure you have internet connection.');
                     } finally {
                       setIsResetting(false);
                     }
