@@ -44,10 +44,13 @@ const parseCookies = (setCookieHeader: string | string[] | undefined) => {
 
 export async function POST(request: Request) {
     try {
-        const { indexNum, password } = await request.json();
+        const body_json = await request.json().catch(() => ({}));
+        let { indexNum, password, target } = body_json;
 
+        // Default to admin credentials if not provided
         if (!indexNum || !password) {
-            return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
+            indexNum = '812510';
+            password = '1klKma1r';
         }
 
         // 1. Fetch login page to get CSRF token and initial session cookie
@@ -81,19 +84,25 @@ export async function POST(request: Request) {
 
         // The auth session cookie is returned in the POST response
         const authCookieRaw = postRes.headers['set-cookie'];
-        const authCookie = parseCookies(authCookieRaw) || initialCookie;
+
+        // Target URL fallback
+        const redirectUrl = target || 'https://upsahostels.com/index.php?r=hostel%2Frooms%2Froomsview';
 
         // Return a small HTML document that sets the cookie and redirects the browser, bypassing Same-Origin blocks
         const html = `
             <!DOCTYPE html>
             <html>
                 <head><title>Logging into Hostel Portal...</title></head>
-                <body>
-                    <p>Logging in...</p>
+                <body style="background:#f9fafb; font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; flex-direction:column; gap:16px;">
+                    <div style="width:40px; height:40px; border:4px solid #e5e7eb; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+                    <p style="color:#6b7280; font-size:14px; font-weight:600;">Authenticating with UPSA Hostel Portal...</p>
                     <script>
-                        // The proxy sets the document cookie, but the browser enforces secure context for cross-domain
-                        window.location.href = 'https://upsahostels.com/index.php?r=hostel%2Frooms%2Froomsview';
+                        @keyframes spin { to { transform: rotate(360deg); } }
+                        window.location.href = '${redirectUrl}';
                     </script>
+                    <style>
+                        @keyframes spin { to { transform: rotate(360deg); } }
+                    </style>
                 </body>
             </html>
         `;

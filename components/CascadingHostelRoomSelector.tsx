@@ -30,7 +30,7 @@ interface CascadingHostelRoomSelectorProps {
 }
 
 const HOSTELS = [
-  { value: '', label: 'All Hostels' },
+  { value: '', label: 'None' },
   { value: 'UPSA Hostel A', label: 'UPSA Hostel A' },
   { value: 'Matthew Opoku Prempeh Hostel', label: 'Matthew Opoku Prempeh' },
   { value: 'Amon Kotei Hostel', label: 'Amon Kotei Hostel' },
@@ -123,7 +123,7 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
     if (!roomId || !onRoommatesLoaded) return;
     setIsLoadingRoommates(true);
     try {
-      const res = await fetch('/api/hostel-roommates', {
+      const res = await fetch('/api/v1/hostel-room-mates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId }),
@@ -172,9 +172,9 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
       <li
         key={r.id}
         ref={isSelected ? selectedItemRef : null}
-        onPointerDown={(e) => {
-          // Use pointerDown so the list item registers before the input blur event
-          e.preventDefault();
+        onClick={(e) => {
+          // onClick allows the browser to distinguish between a tap (click) and a swipe (scroll)
+          e.stopPropagation();
           handleRoomSelect(r);
         }}
         className={`flex items-center justify-between rounded-2xl cursor-pointer transition-colors active:scale-[0.98] select-none ${mobileSized ? 'px-4 py-3.5' : 'px-3 py-2.5'
@@ -214,7 +214,18 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
         placeholder="Search room number..."
         value={roomSearchTerm}
         onChange={(e) => setRoomSearchTerm(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            // Auto-select if only one result
+            if (filteredRooms.length === 1) {
+              handleRoomSelect(filteredRooms[0]);
+            }
+            // Blur input to hide keyboard on mobile
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
         inputMode="numeric"
+        enterKeyHint="done"
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
@@ -271,10 +282,10 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
             onClick={openRoomDropdown}
             disabled={!hostelValue}
             className={`w-full flex items-center justify-between bg-white border rounded-2xl px-4 py-3 text-left transition-all shadow-sm ${!hostelValue
-                ? 'border-gray-200 opacity-60 cursor-not-allowed bg-gray-50'
-                : isRoomOpen
-                  ? 'border-blue-500 ring-4 ring-blue-50/50'
-                  : 'border-gray-200 hover:border-gray-300 cursor-pointer'
+              ? 'border-gray-200 opacity-60 cursor-not-allowed bg-gray-50'
+              : isRoomOpen
+                ? 'border-blue-500 ring-4 ring-blue-50/50'
+                : 'border-gray-200 hover:border-gray-300 cursor-pointer'
               }`}
           >
             <span className={`text-xs sm:text-sm font-semibold truncate ${selectedRoomLabel ? 'text-gray-800' : 'text-gray-400'}`}>

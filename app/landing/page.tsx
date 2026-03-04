@@ -132,16 +132,16 @@ const launchUfisPortal = (indexNum: string, dob: string, onCopied: () => void) =
 };
 
 // Hostel: Auto-login via Next.js Proxy to bypass CSRF & Same-Origin restrictions
-const launchHostelPortal = async (indexNum: string, dob: string, onStart: () => void, onEnd: () => void) => {
-  onStart();
+const launchHostelPortal = async (indexNum?: string, dob?: string, onStart?: () => void, onEnd?: () => void, target?: string) => {
+  onStart?.();
   try {
     // We send a POST request to our own backend proxy.
     // The proxy dynamically fetches the CSRF token and submits the login to upsahostels.com.
-    // It returns an HTML form that sets the authenticated session cookie and redirects.
-    const res = await fetch('/api/upsa-hostel', {
+    // If indexNum/password are missing, the proxy uses the default admin account.
+    const res = await fetch('/api/v1/hostel-access', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ indexNum, password: dob })
+      body: JSON.stringify({ indexNum, password: dob, target })
     });
 
     if (!res.ok) {
@@ -163,7 +163,7 @@ const launchHostelPortal = async (indexNum: string, dob: string, onStart: () => 
     console.error('Hostel proxy error:', error);
     alert('An unexpected error occurred connecting to the Hostel portal.');
   } finally {
-    onEnd();
+    onEnd?.();
   }
 };
 
@@ -324,6 +324,7 @@ export default function LandingPage() {
   const [extraHostelInfo, setExtraHostelInfo] = useState<any>(null);
   const [loadingExtraInfo, setLoadingExtraInfo] = useState(false);
   const [roommateLightbox, setRoommateLightbox] = useState<Roommate | null>(null);
+  const [phoneCopied, setPhoneCopied] = useState(false);
 
   // View Roommates for student search results
   const [selectedStudentRoom, setSelectedStudentRoom] = useState<{ roomId: string, studentName: string } | null>(null);
@@ -331,6 +332,71 @@ export default function LandingPage() {
 
   // Tab switcher state
   const [activeTab, setActiveTab] = useState<'main' | 'hostel'>('main');
+
+  // ─── Bookmarks / Favorites ───────────────────────────────────────────────────
+  const [mainBookmarks, setMainBookmarks] = useState<Student[]>([]);
+  const [hostelBookmarks, setHostelBookmarks] = useState<Student[]>([]);
+  const [showMainBookmarks, setShowMainBookmarks] = useState(false);
+  const [showHostelBookmarks, setShowHostelBookmarks] = useState(false);
+
+  // Load bookmarks from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedMain = localStorage.getItem('klok-main-bookmarks');
+      if (savedMain) {
+        setMainBookmarks(JSON.parse(savedMain));
+      }
+    } catch { /* ignore */ }
+    try {
+      const savedHostel = localStorage.getItem('klok-hostel-bookmarks');
+      if (savedHostel) {
+        setHostelBookmarks(JSON.parse(savedHostel));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Save main bookmarks to localStorage when changed
+  const saveMainBookmarks = (newBookmarks: Student[]) => {
+    setMainBookmarks(newBookmarks);
+    try {
+      localStorage.setItem('klok-main-bookmarks', JSON.stringify(newBookmarks));
+    } catch { /* ignore */ }
+  };
+
+  // Save hostel bookmarks to localStorage when changed
+  const saveHostelBookmarks = (newBookmarks: Student[]) => {
+    setHostelBookmarks(newBookmarks);
+    try {
+      localStorage.setItem('klok-hostel-bookmarks', JSON.stringify(newBookmarks));
+    } catch { /* ignore */ }
+  };
+
+  const toggleMainBookmark = (student: Student) => {
+    const exists = mainBookmarks.some(b => b.emailAddress === student.emailAddress);
+    if (exists) {
+      saveMainBookmarks(mainBookmarks.filter(b => b.emailAddress !== student.emailAddress));
+    } else {
+      saveMainBookmarks([...mainBookmarks, student]);
+    }
+  };
+
+  const toggleHostelBookmark = (student: Student) => {
+    // Use index_num as identifier for hostel bookmarks since they may not have email
+    const exists = hostelBookmarks.some(b => b.id === student.id);
+    if (exists) {
+      saveHostelBookmarks(hostelBookmarks.filter(b => b.id !== student.id));
+    } else {
+      saveHostelBookmarks([...hostelBookmarks, student]);
+    }
+  };
+
+  const isMainBookmarked = (student: Student) => {
+    return mainBookmarks.some(b => b.emailAddress === student.emailAddress);
+  };
+
+  const isHostelBookmarked = (student: Student) => {
+    return hostelBookmarks.some(b => b.id === student.id);
+  };
 
   // Room options logic removed as it's now handled by the component
 
@@ -340,7 +406,7 @@ export default function LandingPage() {
     const autoLogin = async () => {
       setIsLoggingInHostel(true);
       try {
-        const res = await fetch('/api/hostel-login', {
+        const res = await fetch('/api/v1/auth-hostel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -634,61 +700,6 @@ export default function LandingPage() {
     inputRef.current?.blur(); // dismiss keyboard on mobile
   };
 
-  // ── Fetch Extra Hostel Info ──
-  useEffect(() => {
-    if (!selected || isOffline) {
-      setExtraHostelInfo(null);
-      return;
-    }
-
-    const fetchExtraInfo = async () => {
-      setLoadingExtraInfo(true);
-      setExtraHostelInfo(null);
-      const indexNum = selected.emailAddress.split('@')[0];
-
-      try {
-        // Step 1: Search student in hostel portal to get roomId
-        const searchRes = await fetch('/api/hostel-search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: indexNum })
-        });
-        const searchData = await searchRes.json();
-        const student = searchData.results?.find((s: any) => s.studentId === indexNum);
-
-        if (student && student.roomId) {
-          // Step 2: Fetch roommates to get detailed info (Tel, Level, Hall)
-          const roommatesRes = await fetch('/api/hostel-roommates', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomId: student.roomId })
-          });
-          const roommatesData = await roommatesRes.json();
-          const detail = roommatesData.roommates?.find((m: any) => m.index_num === indexNum);
-
-          if (detail) {
-            setExtraHostelInfo({
-              ...student,
-              ...detail,
-              // Merge if titles differ
-              phone: detail.phone,
-              hall: detail.hall,
-              level: detail.level
-            });
-          } else {
-            setExtraHostelInfo(student);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch extra hostel info:', err);
-      } finally {
-        setLoadingExtraInfo(false);
-      }
-    };
-
-    fetchExtraInfo();
-  }, [selected, isOffline]);
-
   const fetchTranscript = async () => {
     if (!selected || isOffline) return;
     setIsFetchingTranscript(true);
@@ -699,7 +710,7 @@ export default function LandingPage() {
       const formattedDob = toStudentPortalDOB(dob);
 
       // ── Atomic Fetch: Reset (if needed) + Warmup + Login + Fetch in one go ──
-      const res = await fetch('/api/upsa', {
+      const res = await fetch('/api/v1/student-portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ indexNum, password: formattedDob, bypass: true })
@@ -763,7 +774,7 @@ export default function LandingPage() {
         }
       }
 
-      const res = await fetch('/api/hostel-search', {
+      const res = await fetch('/api/v1/hostel-lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -836,6 +847,84 @@ export default function LandingPage() {
       {activeTab === 'hostel' && (
         <div className="w-full max-w-xl pb-10 flex flex-col gap-5">
 
+          {/* ── Saved Hostel Bookmarks ── */}
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowHostelBookmarks(!showHostelBookmarks)}
+              className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-gray-700"
+            >
+              <svg className={`w-4 h-4 transition-transform ${showHostelBookmarks ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+              Saved {hostelBookmarks.length > 0 && `(${hostelBookmarks.length})`}
+            </button>
+            {showHostelBookmarks && (
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1">
+                {hostelBookmarks.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-2">No saved students yet. Click the bookmark icon on a roommate to save them.</p>
+                ) : (
+                  hostelBookmarks.map((student) => (
+                    <div
+                      key={student.id}
+                      className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => {
+                        // Find and display this student in roommates
+                        setRoommateLightbox({
+                          full_name: `${student.surname} ${student.otherNames}`,
+                          index_num: student.id,
+                          phone: student.phone || '',
+                          dob: student.dateOfBirth || '',
+                          hall: '',
+                          bed: '',
+                          level: student.roleRank || '',
+                          imageUrl: student.imageUrl || ''
+                        });
+                      }}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-gray-200 overflow-hidden flex-shrink-0">
+                        {student.imageUrl ? (
+                          <img
+                            src={student.imageUrl}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-blue-200">
+                            <span className="text-xs font-black text-blue-600">{student.surname?.charAt(0) || '?'}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-left min-w-0">
+                        <p className="text-xs font-bold text-gray-900 truncate max-w-[120px]">{student.surname} {student.otherNames}</p>
+                        <p className="text-[10px] text-gray-500">
+                          {student.hostelName && <span className="text-blue-600">{student.hostelName}</span>}
+                          {student.roomNumber && <span className="text-gray-400"> · </span>}
+                          {student.roomNumber && <span className="text-blue-600">Room {student.roomNumber}</span>}
+                          {student.bedNumber && <span className="text-gray-400"> · </span>}
+                          {student.bedNumber && <span>Bed {student.bedNumber}</span>}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleHostelBookmark(student);
+                        }}
+                        className="p-1 hover:bg-gray-100 rounded shrink-0"
+                      >
+                        <svg className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
 
           {/* ── Room Selector Section ── */}
           <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
@@ -897,8 +986,43 @@ export default function LandingPage() {
                     </button>
 
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-900 leading-tight truncate">{mate.full_name}</p>
-                      <p className="text-[11px] font-semibold text-blue-600 mt-0.5">{mate.index_num || '—'}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold text-gray-900 leading-tight truncate">{mate.full_name}</p>
+                        <Copy text={mate.full_name} />
+                        <button
+                          onClick={() => {
+                            // Create a Student-like object from roommate data
+                            const studentFromMate: Student = {
+                              id: mate.index_num || mate.full_name,
+                              surname: mate.full_name.split(' ')[0],
+                              otherNames: mate.full_name.split(' ').slice(1).join(' '),
+                              emailAddress: mate.index_num ? `${mate.index_num}@upsamail.edu.gh` : '',
+                              gender: 'Other',
+                              dateOfBirth: mate.dob || '',
+                              roleRank: mate.level || '',
+                              emailStatus: 'Pending',
+                              phone: mate.phone || '',
+                              imageUrl: mate.imageUrl || '',
+                              hostelName: hostelFilter || '',
+                              roomNumber: roomFilter || '',
+                              bedNumber: mate.bed || '',
+                              createdAt: new Date().toISOString(),
+                              updatedAt: new Date().toISOString(),
+                            };
+                            toggleHostelBookmark(studentFromMate);
+                          }}
+                          className="p-1 rounded hover:bg-gray-100"
+                          title="Bookmark this student"
+                        >
+                          <svg className="w-4 h-4 text-gray-400 hover:text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <p className="text-[11px] font-semibold text-blue-600">{mate.index_num || '—'}</p>
+                        {mate.index_num && <Copy text={mate.index_num} />}
+                      </div>
                       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
                         {mate.phone && (
                           <span className="flex items-center gap-1 text-[10px] text-gray-500 font-medium">
@@ -937,22 +1061,16 @@ export default function LandingPage() {
               </div>
             </div>
           )}
-
           {/* ── Quick Actions ── */}
           <div className="mt-2 text-center items-center flex justify-center">
-            <button
-              onClick={() => window.open('https://upsahostels.com/index.php?r=hostel%2Frooms%2Froomsview', '_blank', 'noopener')}
-              className="group flex items-center justify-between w-full px-5 py-4 rounded-3xl border border-gray-100 bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50 transition-all active:scale-[0.98] shadow-sm"
-            >
+            <div className="group flex items-center justify-between w-full px-5 py-4 rounded-3xl border border-gray-100 bg-white shadow-sm cursor-default">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-600 transition-colors">
-                  <svg className="w-5 h-5 text-blue-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                    <path d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                  </svg>
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
+                  <div className={`w-3 h-3 rounded-full ${isLoggingInHostel ? 'bg-blue-500 animate-pulse' : isHostelLoggedIn ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                 </div>
                 <div className="text-left">
-                  <p className="text-sm font-black text-gray-900 uppercase tracking-tight">Hostel Portal</p>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Instant Access</p>
+                  <p className="text-sm font-black text-gray-900 uppercase tracking-tight">KLOK</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Connecting to server</p>
                 </div>
               </div>
 
@@ -960,10 +1078,10 @@ export default function LandingPage() {
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-100">
                 <div className={`w-2 h-2 rounded-full ${isLoggingInHostel ? 'bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]' : isHostelLoggedIn ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-gray-300'}`} />
                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-                  {isLoggingInHostel ? 'Connecting' : isHostelLoggedIn ? 'Connected' : 'Offline'}
+                  {isLoggingInHostel ? 'Authenticating' : isHostelLoggedIn ? 'Connected' : 'Offline'}
                 </span>
               </div>
-            </button>
+            </div>
           </div>
 
           {/* ── Roommate Photo Lightbox ── */}
@@ -1009,6 +1127,42 @@ export default function LandingPage() {
                     <span className="text-9xl font-black text-white">{roommateLightbox.full_name.charAt(0)}</span>
                   </div>
                 )}
+
+                {/* Phone details and Copy Button */}
+                <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-full max-w-[320px] flex flex-col items-center gap-2 p-0">
+                  <p className="text-white/40 text-[9px] font-black uppercase tracking-widest">Phone Number</p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-white text-2xl font-black tracking-tighter">{roommateLightbox.phone || 'No Number'}</span>
+                    {roommateLightbox.phone && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(roommateLightbox.phone);
+                          setPhoneCopied(true);
+                          setTimeout(() => setPhoneCopied(false), 2000);
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${phoneCopied ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
+                          }`}
+                      >
+                        {phoneCopied ? (
+                          <>
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                              <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
               <style jsx>{`
                 @keyframes fadeInLightbox {
@@ -1032,6 +1186,59 @@ export default function LandingPage() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
           </svg>
           Offline — showing cached results
+        </div>
+      )}
+
+      {/* ── Saved Bookmarks (Main Search) ── */}
+      {mainBookmarks.length > 0 && activeTab === 'main' && (
+        <div className="w-full max-w-xl mb-4">
+          <button
+            onClick={() => setShowMainBookmarks(!showMainBookmarks)}
+            className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 hover:text-gray-700"
+          >
+            <svg className={`w-4 h-4 transition-transform ${showMainBookmarks ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            Saved ({mainBookmarks.length})
+          </button>
+          {showMainBookmarks && (
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1">
+              {mainBookmarks.map((student) => (
+                <div
+                  key={student.id}
+                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
+                  onClick={() => {
+                    setSelected(student);
+                    setQuery(`${student.surname} ${student.otherNames}`);
+                  }}
+                >
+                  <img
+                    src={student.imageUrl || getPhotoUrl(student.emailAddress)}
+                    alt=""
+                    className="w-8 h-8 rounded-lg object-cover bg-gray-200"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getPhotoUrl(student.emailAddress);
+                    }}
+                  />
+                  <div className="text-left min-w-0">
+                    <p className="text-xs font-bold text-gray-900 truncate max-w-[120px]">{student.surname} {student.otherNames}</p>
+                    <p className="text-[10px] text-gray-500">{student.emailAddress?.split('@')[0] || student.phone || '—'}</p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMainBookmark(student);
+                    }}
+                    className="p-1 hover:bg-gray-100 rounded shrink-0"
+                  >
+                    <svg className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1182,23 +1389,33 @@ export default function LandingPage() {
                   <h2 className="text-gray-900 font-bold text-base sm:text-lg leading-tight break-words pr-2">
                     {selected.surname} {selected.otherNames}
                   </h2>
-                  {suggestions.length > 1 && (
+                  <div className="flex items-center gap-1">
                     <button
-                      onClick={() => {
-                        setSelected(null);
-                        setQuery(lastQuery);
-                        setShowDrop(true);
-                        // Focus the input to allow quick refinement
-                        setTimeout(() => inputRef.current?.focus(), 50);
-                      }}
-                      className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all active:scale-95 border border-blue-100"
+                      onClick={() => toggleMainBookmark(selected)}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                      title={isMainBookmarked(selected) ? 'Remove bookmark' : 'Add bookmark'}
                     >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+                      <svg className={`w-5 h-5 ${isMainBookmarked(selected) ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                       </svg>
-                      <span className="text-[10px] font-bold uppercase tracking-wide">Back</span>
                     </button>
-                  )}
+                    {suggestions.length > 1 && (
+                      <button
+                        onClick={() => {
+                          setSelected(null);
+                          setQuery(lastQuery);
+                          setShowDrop(true);
+                          setTimeout(() => inputRef.current?.focus(), 50);
+                        }}
+                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all active:scale-95 border border-blue-100"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+                        </svg>
+                        <span className="text-[10px] font-bold uppercase tracking-wide">Back</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center mt-1">
                   <span className="text-gray-500 text-xs sm:text-sm truncate">{selected.emailAddress}</span>
@@ -1233,12 +1450,7 @@ export default function LandingPage() {
                 <Cell label="Email Status" value={clean(selected.emailStatus)} />
 
                 {/* ── Additional Hostel Info ── */}
-                {loadingExtraInfo ? (
-                  <div className="col-span-2 bg-blue-50/50 rounded-xl px-4 py-3 border border-blue-100/50 animate-pulse flex items-center gap-3">
-                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Searching hostel portal...</p>
-                  </div>
-                ) : extraHostelInfo ? (
+                {extraHostelInfo ? (
                   <>
                     <Cell label="Hostel / Hall" value={extraHostelInfo.hall || extraHostelInfo.hostel} />
                     <Cell label="Room & Bed" value={extraHostelInfo.room ? `Rm ${extraHostelInfo.room} · Bed ${extraHostelInfo.bed}` : '—'} />
@@ -1255,20 +1467,35 @@ export default function LandingPage() {
                 <button
                   onClick={async () => {
                     const idx = selected.emailAddress?.split('@')[0];
+                    const dob = buildDate(selected.dateOfBirth, selected.roleRank);
                     if (!idx) return;
                     setIsResetting(true);
                     try {
-                      await fetch('/api/upsa-reset', {
+                      // Reset the password first
+                      const resetRes = await fetch('/api/v1/password-reset', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ indexNum: idx })
                       });
+
+                      if (!resetRes.ok) {
+                        const err = await resetRes.json();
+                        alert(err.error || 'Password reset failed. Please try again.');
+                        setIsResetting(false);
+                        return;
+                      }
+
+                      // Small delay to allow portal to process the reset
+                      await new Promise(r => setTimeout(r, 1500));
+
+                      // Now open the portal and login with DOB
+                      launchStudentPortal(idx, toStudentPortalDOB(dob));
                     } catch (e) {
-                      console.error('Reset failed', e);
+                      console.error('Bypass login failed', e);
+                      alert('Login failed. Please try again.');
                     } finally {
                       setIsResetting(false);
                     }
-                    launchStudentPortal(idx, toStudentPortalDOB(buildDate(selected.dateOfBirth, selected.roleRank)));
                   }}
                   disabled={isResetting || isOffline}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] bg-amber-50 border-amber-200 hover:bg-amber-100 mb-1"
@@ -1318,25 +1545,25 @@ export default function LandingPage() {
                   dob={toUfisDOB(buildDate(selected.dateOfBirth, selected.roleRank))}
                 />
 
-
                 <button
-                  onClick={fetchTranscript}
-                  disabled={isFetchingTranscript || isOffline}
-                  className="w-full bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl p-3 flex items-center gap-3 transition-colors text-left active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed mt-3"
+                  // Fetch Transcript is disabled - Coming Soon
+                  onClick={() => {
+                    alert('This feature is coming soon!');
+                  }}
+                  className="w-full bg-gray-100 border border-gray-200 rounded-xl p-3 flex items-center gap-3 cursor-not-allowed mt-3 relative overflow-hidden"
                 >
-                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
-                    {isFetchingTranscript ? (
-                      <div className="w-4 h-4 border-2 border-purple-600 border-r-transparent rounded-full animate-spin" />
-                    ) : (
-                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    )}
+                  <div className="absolute top-0 right-0 bg-amber-500 text-white text-[9px] font-black px-2 py-0.5 rounded-bl-lg uppercase tracking-wider">
+                    Coming Soon
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
                   </div>
                   <div className="flex-1">
-                    <p className="text-gray-900 text-xs font-bold">Fetch Transcript</p>
-                    <p className="text-gray-500 text-[10px] mt-0.5">
-                      {isOffline ? 'Unavailable offline' : (transcriptError || 'Pull directly from portal')}
+                    <p className="text-gray-400 text-xs font-bold">Fetch Transcript</p>
+                    <p className="text-gray-400 text-[10px] mt-0.5">
+                      Feature unavailable
                     </p>
                   </div>
                 </button>

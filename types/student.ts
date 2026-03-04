@@ -8,6 +8,12 @@ export interface Student {
   roleRank: string;
   emailStatus: 'Active' | 'Inactive' | 'Pending';
   program?: string;
+  phone?: string;
+  imageUrl?: string;
+  // Hostel-specific fields
+  hostelName?: string;
+  roomNumber?: string;
+  bedNumber?: string;
   createdAt: string;
   updatedAt: string;
 }
