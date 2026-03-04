@@ -240,13 +240,8 @@ const CascadingHostelRoomSelector: React.FC<CascadingHostelRoomSelectorProps> = 
         value={roomSearchTerm}
         onChange={(e) => setRoomSearchTerm(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            // Auto-select if only one result
-            if (filteredRooms.length === 1) {
-              handleRoomSelect(filteredRooms[0]);
-            }
-            // Don't blur input - keep keyboard open for continued typing
-          }
+          // Keep keyboard open - don't blur on Enter
+          // User can either tap the room or keep typing
         }}
         inputMode="numeric"
         enterKeyHint="done"
