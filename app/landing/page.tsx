@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Student } from '@/types/student';
+import { Student } from './types';
 import CascadingHostelRoomSelector, { Roommate } from '@/components/CascadingHostelRoomSelector';
+import ProfessionalTranscript from './TranscriptComponent';
 
 // ─── IndexedDB offline cache ──────────────────────────────────────────────────
 const IDB_NAME = 'klok-cache';
@@ -87,15 +88,14 @@ const toStudentPortalDOB = (raw: string): string => {
   return `${dd}-${mm}-${yyyy}`;
 };
 
-// UFIS fees portal: YYYY-MMM-DD with 3-letter month  e.g. 1999-MAR-18
-const MONTHS_3 = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+// UFIS fees portal: YYYY-MM-DD  e.g. 1999-03-18
 const toUfisDOB = (raw: string): string => {
   const d = parseStoredDate(raw);
   if (!d) return raw;
   const dd = String(d.getDate()).padStart(2, '0');
-  const mmm = MONTHS_3[d.getMonth()];
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
-  return `${yyyy}-${mmm}-${dd}`;
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 // ─── Auto-login launchers ─────────────────────────────────────────────────────
@@ -105,7 +105,6 @@ const launchStudentPortal = (indexNum: string, dob: string) => {
   const w = window.open('about:blank', '_blank');
   if (!w) {
     // Popup blocked - fallback: copy credentials and open portal directly
-    console.log('Popup blocked, using fallback for student portal');
     navigator.clipboard.writeText(`${indexNum}\n${dob}`).catch(() => { });
     const opened = window.open('https://upsasip.com/student-portal', '_blank');
     if (!opened) {
@@ -302,7 +301,9 @@ function Cell({ label, value }: { label: string; value: string }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 // Room ranges logic removed in favor of PremiumRoomSelector
 
+
 export default function LandingPage() {
+  // State declarations
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Student[]>([]);
   const [showDrop, setShowDrop] = useState(false);
@@ -344,7 +345,60 @@ export default function LandingPage() {
   const [extraHostelInfo, setExtraHostelInfo] = useState<any>(null);
   const [loadingExtraInfo, setLoadingExtraInfo] = useState(false);
   const [roommateLightbox, setRoommateLightbox] = useState<Roommate | null>(null);
+  const [studentPhotoLightbox, setStudentPhotoLightbox] = useState<any | null>(null);
   const [phoneCopied, setPhoneCopied] = useState(false);
+
+  // Hostel student registration search - with client-side caching for instant search
+  const [showStuSearch, setShowStuSearch] = useState(false);
+  const [showRoomBrowser, setShowRoomBrowser] = useState(true);
+  const [stuSearchQuery, setStuSearchQuery] = useState('');
+  const [stuSearchResults, setStuSearchResults] = useState<any[]>([]);
+  const [isStuSearching, setIsStuSearching] = useState(false);
+  const [stuPage, setStuPage] = useState(1);
+  const [stuTotalCount, setStuTotalCount] = useState(0);
+  const [stuHasMore, setStuHasMore] = useState(false);
+
+  // Client-side cache for instant search
+  const [cachedStudents, setCachedStudents] = useState<any[]>([]);
+  const CACHE_KEY = 'klok-hostel-students-cache';
+  const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+
+  // Load cache on mount
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { students, timestamp } = JSON.parse(cached);
+        const now = Date.now();
+        if (now - timestamp < CACHE_DURATION && students?.length > 0) {
+          console.log('Loaded from cache:', students.length, 'students');
+          setCachedStudents(students);
+        }
+      }
+    } catch (e) { console.warn('Cache load failed:', e); }
+  }, []);
+
+  // Save to cache function
+  const saveToCache = (students: any[]) => {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ students, timestamp: Date.now() }));
+      setCachedStudents(students);
+    } catch (e) { console.warn('Cache save failed:', e); }
+  };
+
+  // Local search function - instant!
+  const searchLocally = (query: string): any[] => {
+    if (!query.trim() || cachedStudents.length === 0) return [];
+    const q = query.toLowerCase().trim();
+    const isNumeric = /^\d+$/.test(q);
+    return cachedStudents.filter(s => {
+      if (isNumeric) {
+        return s.studentId?.toString().toLowerCase().includes(q);
+      }
+      return s.name?.toLowerCase().includes(q) ||
+        s.studentId?.toString().toLowerCase().includes(q);
+    }).slice(0, 100); // Limit results
+  };
 
   // View Roommates for student search results
   const [selectedStudentRoom, setSelectedStudentRoom] = useState<{ roomId: string, studentName: string } | null>(null);
@@ -374,6 +428,139 @@ export default function LandingPage() {
       }
     } catch { /* ignore */ }
   }, []);
+
+  // ─── Hostel Student Search: Initial Load ────────────────────────────────────
+  // Only run when showStuSearch changes. Do NOT put cachedStudents here —
+  // that would re-run the effect every time saveToCache() is called and wipe fresh results.
+  const cachedStudentsRef = useRef<any[]>([]);
+  // Keep ref in sync with state so closures always read the latest value.
+  useEffect(() => { cachedStudentsRef.current = cachedStudents; }, [cachedStudents]);
+
+  useEffect(() => {
+    if (!showStuSearch) return;
+    // Panel just opened — show cache immediately if available, otherwise fetch
+    if (cachedStudentsRef.current.length > 0) {
+      console.log('[HostelSearch] Panel opened, showing cached results instantly.');
+      setStuSearchResults(cachedStudentsRef.current.slice(0, 100));
+      setStuTotalCount(cachedStudentsRef.current.length);
+      setStuHasMore(cachedStudentsRef.current.length > 100);
+      setIsStuSearching(false);
+    } else {
+      console.log('[HostelSearch] Panel opened, no cache. Fetching from API.');
+      fetchAndCache();
+    }
+  }, [showStuSearch]); // intentionally only depends on showStuSearch
+
+  // ─── Hostel Student Search: Query-Driven Search ──────────────────────────────
+  useEffect(() => {
+    if (!showStuSearch) return;
+
+    const query = stuSearchQuery.trim();
+    if (query === '') {
+      // Empty query — show cache if any, otherwise the initial load effect handles it
+      if (cachedStudentsRef.current.length > 0) {
+        setStuSearchResults(cachedStudentsRef.current.slice(0, 100));
+        setStuTotalCount(cachedStudentsRef.current.length);
+        setStuHasMore(cachedStudentsRef.current.length > 100);
+        setIsStuSearching(false);
+      }
+      return;
+    }
+
+    // Try local cache first - INSTANT
+    const localResults = searchLocally(query);
+    if (localResults.length > 0) {
+      console.log(`[HostelSearch] Local hit: ${localResults.length} items.`);
+      setStuSearchResults(localResults);
+      setStuTotalCount(localResults.length);
+      setStuHasMore(false);
+      setIsStuSearching(false);
+      return;
+    }
+
+    // No local match — debounce then call API
+    console.log(`[HostelSearch] No local hit. Debouncing 600ms for API call...`);
+    setIsStuSearching(true);
+    const timer = setTimeout(() => {
+      fetchAndCache(query);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [stuSearchQuery, showStuSearch]); // NO cachedStudents here — avoids stale closure overwrite
+
+  const fetchAndCache = async (query: string = '') => {
+    setIsStuSearching(true);
+    if (query !== '') setStuSearchResults([]);
+
+    try {
+      console.log(`[HostelSearch] Fetching from API: "${query}"`);
+      const res = await fetch('/api/v1/hostel-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, page: 1 })
+      });
+      const d = await res.json();
+      const results = d.results || [];
+      console.log(`[HostelSearch] Fetch Success! Items: ${results.length}, Total: ${d.totalCount}`);
+
+      // For initial (no query) load: cache and then preload remaining pages in background
+      if (!query && results.length > 0) {
+        saveToCache(results);
+        // Kick off background preload after a short delay so the UI settles first
+        setTimeout(() => preloadAllStudents(results, d.totalCount || 0), 1500);
+      }
+
+      setStuSearchResults(results);
+      setStuTotalCount(d.totalCount || 0);
+      setStuHasMore(d.hasMore || false);
+      setStuPage(1);
+    } catch (err: any) {
+      console.error('[HostelSearch] Network/parse error:', err);
+      setStuSearchResults([]);
+    } finally {
+      setIsStuSearching(false);
+    }
+  };
+
+  // ─── Background preloader: silently fetches remaining pages after initial load ─
+  const preloadAllStudents = async (initialResults: any[], totalCount: number) => {
+    const perPage = initialResults.length;
+    if (perPage === 0 || totalCount <= perPage) return;
+
+    const totalPages = Math.ceil(totalCount / perPage);
+    console.log(`[HostelSearch] Starting background preload: ${totalPages} pages, ${totalCount} total`);
+
+    // We already have page 1 — fetch pages 2, 3, ...
+    let accumulated = [...initialResults];
+    for (let p = 2; p <= totalPages; p++) {
+      try {
+        // Small delay between pages to avoid hammering the portal
+        await new Promise(r => setTimeout(r, 300));
+        const res = await fetch('/api/v1/hostel-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: '', page: p })
+        });
+        const d = await res.json();
+        const pageResults = d.results || [];
+        if (pageResults.length === 0) break; // portal returned nothing, stop
+        accumulated = [...accumulated, ...pageResults];
+        // Update cache with progressively more students
+        saveToCache(accumulated);
+        console.log(`[HostelSearch] Preloaded page ${p}/${totalPages} (${accumulated.length} total cached)`);
+      } catch (err) {
+        console.warn(`[HostelSearch] Preload page ${p} failed:`, err);
+        break; // stop on error, we'll use whatever we have
+      }
+    }
+    console.log(`[HostelSearch] Preload complete! ${accumulated.length} students in local cache`);
+  };
+
+  const refreshCache = () => {
+    localStorage.removeItem(CACHE_KEY);
+    setCachedStudents([]);
+    fetchAndCache();
+  };
 
   // Save main bookmarks to localStorage when changed
   const saveMainBookmarks = (newBookmarks: Student[]) => {
@@ -464,7 +651,12 @@ export default function LandingPage() {
 
   // Escape key closes roommate lightbox
   useEffect(() => {
-    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') setRoommateLightbox(null); };
+    const fn = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setRoommateLightbox(null);
+        setStudentPhotoLightbox(null);
+      }
+    };
     window.addEventListener('keydown', fn);
     return () => window.removeEventListener('keydown', fn);
   }, []);
@@ -869,15 +1061,72 @@ export default function LandingPage() {
 
           {/* ── Saved Hostel Bookmarks ── */}
           <div className="space-y-2">
-            <button
-              onClick={() => setShowHostelBookmarks(!showHostelBookmarks)}
-              className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-gray-700"
-            >
-              <svg className={`w-4 h-4 transition-transform ${showHostelBookmarks ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-              Saved {hostelBookmarks.length > 0 && `(${hostelBookmarks.length})`}
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setShowHostelBookmarks(!showHostelBookmarks)}
+                className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-gray-700"
+              >
+                <svg className={`w-4 h-4 transition-transform ${showHostelBookmarks ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+                Saved {hostelBookmarks.length > 0 && `(${hostelBookmarks.length})`}
+              </button>
+
+              <button
+                onClick={() => {
+                  const newState = !showRoomBrowser;
+                  setShowRoomBrowser(newState);
+                  if (newState) setShowStuSearch(false);
+                }}
+                className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-all ${showRoomBrowser ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+                Browse Room {showRoomBrowser && 'ON'}
+              </button>
+
+              <button
+                onClick={() => {
+                  const newState = !showStuSearch;
+                  setShowStuSearch(newState);
+                  if (newState) {
+                    setShowRoomBrowser(false);
+                    setStuSearchQuery('');
+                    setStuPage(1);
+
+                    // Try cache first - INSTANT!
+                    if (cachedStudents.length > 0) {
+                      console.log('Using cached students:', cachedStudents.length);
+                      setStuSearchResults(cachedStudents.slice(0, 100));
+                      setStuTotalCount(cachedStudents.length);
+                      setStuHasMore(cachedStudents.length > 100);
+                    } else {
+                      // No cache, fetch from API
+                      setStuSearchResults([]);
+                      setStuTotalCount(0);
+                      setStuHasMore(false);
+                      fetchAndCache();
+                    }
+                  }
+                }}
+                className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-all ${showStuSearch ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+              >
+                <div className="relative w-3 h-3 flex items-center justify-center">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                  </svg>
+                  {showStuSearch && (
+                    <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                  )}
+                </div>
+                Students {showStuSearch && 'ON'}
+              </button>
+            </div>
             {showHostelBookmarks && (
               <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1">
                 {hostelBookmarks.length === 0 ? (
@@ -947,26 +1196,324 @@ export default function LandingPage() {
 
 
           {/* ── Room Selector Section ── */}
-          <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-              </svg>
-              Browse by Room
-            </p>
+          {showRoomBrowser && (
+            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
+              <div className="flex justify-between items-center mb-4">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                  </svg>
+                  Browse by Room
+                </p>
+                <button
+                  onClick={() => setShowRoomBrowser(false)}
+                  className="p-1 hover:bg-gray-100 rounded text-gray-400 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-            <CascadingHostelRoomSelector
-              hostelValue={hostelFilter}
-              roomValue={roomFilter}
-              onHostelChange={setHostelFilter}
-              onRoomChange={(room) => {
-                setRoomFilter(room);
-                if (!room) setRoommates([]);
-              }}
-              onRoommatesLoaded={setRoommates}
-            />
-          </div>
+              <CascadingHostelRoomSelector
+                hostelValue={hostelFilter}
+                roomValue={roomFilter}
+                onHostelChange={setHostelFilter}
+                onRoomChange={(room) => {
+                  setRoomFilter(room);
+                  if (!room) setRoommates([]);
+                }}
+                onRoommatesLoaded={setRoommates}
+              />
+            </div>
+          )}
+
+          {/* ── Registered Students Card ── */}
+          {showStuSearch && (
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2">
+              <div className="p-4 px-5 flex items-center justify-between border-b border-gray-50 bg-gray-50/30">
+                <div className="flex items-center gap-3">
+                  <div className="relative w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-gray-900 leading-tight">Registered Students</h3>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={refreshCache}
+                    title="Refresh Cache"
+                    className="p-1.5 hover:bg-emerald-50 rounded-lg text-emerald-600 transition-all active:rotate-180 duration-500"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setShowStuSearch(false)}
+                    className="p-1.5 hover:bg-gray-200 rounded-lg text-gray-400 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col h-[500px] max-h-[70vh]">
+                <div className="p-3 sticky top-0 bg-white z-10">
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                      {isStuSearching ? (
+                        <div className="w-3.5 h-3.5 border-2 border-blue-500 border-r-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+                        </svg>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={stuSearchQuery}
+                      onChange={e => setStuSearchQuery(e.target.value.toUpperCase())}
+                      placeholder="Type name or index no…"
+                      className="w-full bg-gray-50 border border-gray-200 group-focus-within:border-blue-500 group-focus-within:bg-white rounded-2xl pl-11 pr-4 py-3 text-sm font-semibold text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-3 pb-3 custom-scrollbar">
+                  {isStuSearching && stuSearchResults.length === 0 && (
+                    <div className="flex flex-col gap-2">
+                      {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="bg-white border border-gray-50 rounded-2xl p-3 flex items-center gap-4 animate-pulse">
+                          <div className="w-12 h-12 rounded-xl bg-gray-100 shrink-0" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-3.5 bg-gray-100 rounded w-3/4" />
+                            <div className="h-3 bg-gray-100 rounded w-1/2" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!isStuSearching && stuSearchResults.length === 0 && stuSearchQuery.trim() !== '' && (
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                      <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mb-3">
+                        <svg className="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                        </svg>
+                      </div>
+                      <p className="text-gray-900 text-sm font-bold">No students found</p>
+                      <p className="text-gray-500 text-[11px] mt-1">Try a different name or index number</p>
+                    </div>
+                  )}
+
+                  {/* Empty state for initial load — shown when not loading, query is empty and results are empty */}
+                  {!isStuSearching && stuSearchResults.length === 0 && stuSearchQuery.trim() === '' && (
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                      <div className="w-14 h-14 rounded-full bg-gray-50 flex items-center justify-center mb-3">
+                        <svg className="w-7 h-7 text-gray-300" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                      </div>
+                      <p className="text-gray-900 text-sm font-bold">Could not load students</p>
+                      <p className="text-gray-500 text-[11px] mt-1 mb-3">Portal may be slow or unavailable</p>
+                      <button
+                        onClick={refreshCache}
+                        className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-xl hover:bg-emerald-600 transition-colors active:scale-95"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  )}
+
+                  {stuSearchResults.length > 0 && (
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex justify-between items-center px-1 sticky top-0 bg-white py-2 z-[5]">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                          Results · {stuSearchResults.length.toLocaleString()} {stuTotalCount > 0 ? ` of ${stuTotalCount.toLocaleString()}` : ''}
+                        </p>
+                      </div>
+
+                      {stuSearchResults.map((r, i) => (
+                        <div key={i} className="group bg-white border border-gray-100 rounded-2xl p-3.5 flex items-center gap-4 shadow-sm hover:border-blue-200 transition-all animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          <button
+                            onClick={() => setStudentPhotoLightbox(r)}
+                            className="relative w-14 h-14 rounded-xl bg-gray-100 overflow-hidden shrink-0 border border-gray-100 hover:ring-2 hover:ring-blue-500 transition-all active:scale-95"
+                          >
+                            <img
+                              src={`https://upsasip.com/images/students/contStudents/${r.studentId}.jpg`}
+                              alt={r.name}
+                              className="w-full h-full object-cover object-top"
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                                if (fallback) fallback.style.display = 'flex';
+                              }}
+                            />
+                            <div className="hidden absolute inset-0 w-full h-full items-center justify-center bg-gradient-to-br from-blue-100 to-blue-200">
+                              <span className="text-xl font-black text-blue-600">{(r.name || '?').charAt(0)}</span>
+                            </div>
+                          </button>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-bold text-gray-900 truncate leading-tight">{r.name || '—'}</p>
+                              {r.name && <Copy text={r.name} />}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-tight">{r.studentId || '—'}</p>
+                              {r.studentId && <Copy text={r.studentId} />}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              {r.roomNumber && (
+                                <span className="px-2 py-0.5 bg-blue-50 rounded text-[9px] font-bold text-blue-600 whitespace-nowrap">
+                                  Room {r.roomNumber}
+                                </span>
+                              )}
+                              {r.room && r.room !== r.roomNumber && (
+                                <span className="px-2 py-0.5 bg-gray-100 rounded text-[9px] font-bold text-gray-600 whitespace-nowrap">
+                                  {r.room}
+                                </span>
+                              )}
+                              {r.bed && (
+                                <span className="px-2 py-0.5 bg-emerald-50 rounded text-[9px] font-bold text-emerald-600 whitespace-nowrap">
+                                  Bed {r.bed}
+                                </span>
+                              )}
+                              {r.hostel && !r.roomNumber && !r.room && (
+                                <span className="px-2 py-0.5 bg-gray-100 rounded text-[9px] font-bold text-gray-500 whitespace-nowrap">
+                                  {r.hostel}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            <button
+                              onClick={() => {
+                                // Create a Student-like object from hostel search result
+                                const studentFromRes: Student = {
+                                  id: r.studentId,
+                                  surname: r.name?.split(' ')[0] || '',
+                                  otherNames: r.name?.split(' ').slice(1).join(' ') || '',
+                                  emailAddress: `${r.studentId}@upsamail.edu.gh`,
+                                  gender: 'Other',
+                                  dateOfBirth: '',
+                                  roleRank: '',
+                                  emailStatus: 'Pending',
+                                  phone: '',
+                                  imageUrl: `https://upsasip.com/images/students/contStudents/${r.studentId}.jpg`,
+                                  hostelName: r.hostel || '',
+                                  roomNumber: r.roomNumber || '',
+                                  bedNumber: r.bed || '',
+                                  createdAt: new Date().toISOString(),
+                                  updatedAt: new Date().toISOString(),
+                                };
+                                toggleHostelBookmark(studentFromRes);
+                              }}
+                              className="p-2 rounded-xl hover:bg-gray-100 transition-colors"
+                              title={isHostelBookmarked({ id: r.studentId } as Student) ? 'Remove bookmark' : 'Add bookmark'}
+                            >
+                              <svg className={`w-5 h-5 ${isHostelBookmarked({ id: r.studentId } as Student) ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                              </svg>
+                            </button>
+                            <button
+                              disabled={isFetchingTranscript}
+                              onClick={async () => {
+                                // Setup selected student so we can show results
+                                const studentFromRes: Student = {
+                                  id: r.studentId,
+                                  surname: r.name?.split(' ')[0] || '',
+                                  otherNames: r.name?.split(' ').slice(1).join(' ') || '',
+                                  emailAddress: `${r.studentId}@upsamail.edu.gh`,
+                                  gender: 'Other',
+                                  dateOfBirth: '',
+                                  roleRank: '',
+                                  emailStatus: 'Pending',
+                                  phone: '',
+                                  imageUrl: `https://upsasip.com/images/students/contStudents/${r.studentId}.jpg`,
+                                  hostelName: r.hostel || '',
+                                  roomNumber: r.roomNumber || '',
+                                  bedNumber: r.bed || '',
+                                  createdAt: new Date().toISOString(),
+                                  updatedAt: new Date().toISOString(),
+                                };
+                                setSelected(studentFromRes);
+                                setSelectedStudentRoom({ roomId: r.roomNumber || '', studentName: r.name || '' });
+
+                                // Fetch transcript immediately
+                                setIsFetchingTranscript(true);
+                                setTranscriptError(null);
+                                try {
+                                  const res = await fetch('/api/v1/student-portal', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      indexNum: r.studentId,
+                                      password: '', // We trust the bypass
+                                      bypass: true
+                                    })
+                                  });
+                                  if (!res.ok) throw new Error('Portal failed');
+                                  const html = await res.text();
+                                  setTranscriptHtml(html);
+                                } catch (e: any) {
+                                  setTranscriptError(e.message);
+                                  alert('Could not fetch results. Try the main search bypass.');
+                                } finally {
+                                  setIsFetchingTranscript(false);
+                                }
+                              }}
+                              className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all"
+                            >
+                              Results
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {stuHasMore && (
+                        <button
+                          onClick={async () => {
+                            const nextPage = stuPage + 1;
+                            setIsStuSearching(true);
+                            try {
+                              const res = await fetch('/api/v1/hostel-lookup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: stuSearchQuery.trim(), page: nextPage }) });
+                              const d = await res.json();
+                              setStuSearchResults(prev => [...prev, ...(d.results || [])]);
+                              setStuTotalCount(d.totalCount || stuTotalCount);
+                              setStuHasMore(d.hasMore || false);
+                              setStuPage(nextPage);
+                            } catch { } finally { setIsStuSearching(false); }
+                          }}
+                          disabled={isStuSearching}
+                          className="w-full py-4 mt-2 rounded-2xl border border-blue-200 bg-blue-50/50 hover:bg-blue-50 text-blue-700 text-xs font-black transition-all disabled:opacity-50 flex items-center justify-center gap-2 group active:scale-[0.98]"
+                        >
+                          {isStuSearching ? (
+                            <div className="w-4 h-4 border-2 border-blue-600 border-r-transparent rounded-full animate-spin" />
+                          ) : (
+                            <>
+                              View More Students
+                              <span className="px-1.5 py-0.5 rounded-md bg-blue-100 text-[10px]">
+                                {(stuTotalCount - stuSearchResults.length).toLocaleString()}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Roommates Display ── */}
           {roommates.length > 0 && (
@@ -1034,7 +1581,7 @@ export default function LandingPage() {
                           className="p-1 rounded hover:bg-gray-100"
                           title="Bookmark this student"
                         >
-                          <svg className="w-4 h-4 text-gray-400 hover:text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <svg className={`w-4 h-4 ${isHostelBookmarked({ id: mate.index_num } as Student) ? 'text-amber-500 fill-amber-500' : 'text-gray-400 hover:text-amber-500'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                           </svg>
                         </button>
@@ -1081,548 +1628,651 @@ export default function LandingPage() {
               </div>
             </div>
           )}
-          {/* ── Quick Actions ── */}
-          <div className="mt-2 text-center items-center flex justify-center">
-            <div className="group flex items-center justify-between w-full px-5 py-4 rounded-3xl border border-gray-100 bg-white shadow-sm cursor-default">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
-                  <div className={`w-3 h-3 rounded-full ${isLoggingInHostel ? 'bg-blue-500 animate-pulse' : isHostelLoggedIn ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-black text-gray-900 uppercase tracking-tight">KLOK</p>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Connecting to server</p>
-                </div>
-              </div>
+        </div>
+      )}
 
-              {/* Status Dot */}
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-100">
-                <div className={`w-2 h-2 rounded-full ${isLoggingInHostel ? 'bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]' : isHostelLoggedIn ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-gray-300'}`} />
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-                  {isLoggingInHostel ? 'Authenticating' : isHostelLoggedIn ? 'Connected' : 'Offline'}
-                </span>
-              </div>
+      {/* ── Quick Actions (Hostel Only) ── */}
+      {activeTab === 'hostel' && (
+      <div className="mt-2 text-center items-center flex justify-center">
+        <div className="group flex items-center justify-between w-full px-5 py-4 rounded-3xl border border-gray-100 bg-white shadow-sm cursor-default">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
+              <div className={`w-3 h-3 rounded-full ${isLoggingInHostel ? 'bg-blue-500 animate-pulse' : isHostelLoggedIn ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-black text-gray-900 uppercase tracking-tight">KLOK</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Connecting to server</p>
             </div>
           </div>
 
-          {/* ── Roommate Photo Lightbox ── */}
-          {roommateLightbox && (
-            <div
-              className="fixed inset-0 z-[500] flex items-center justify-center bg-black/90 backdrop-blur-md p-6 sm:p-12"
-              onClick={() => setRoommateLightbox(null)}
-              style={{ animation: 'fadeInLightbox 0.25s ease-out' }}
-            >
-              <div
-                className="relative max-w-3xl w-full max-h-full flex items-center justify-center"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Close button */}
-                <button
-                  onClick={() => setRoommateLightbox(null)}
-                  className="absolute -top-14 right-0 w-12 h-12 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-full flex items-center justify-center transition-all group active:scale-90"
-                >
-                  <svg className="w-6 h-6 text-white group-hover:rotate-90 transition-transform" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-
-                {roommateLightbox.imageUrl ? (
-                  <div className="relative w-full h-full flex items-center justify-center">
-                    <img
-                      src={roommateLightbox.imageUrl}
-                      alt={roommateLightbox.full_name}
-                      className="max-w-full max-h-[80vh] rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] object-contain border border-white/20"
-                      style={{ animation: 'scaleInLightbox 0.3s cubic-bezier(0.2, 1, 0.3, 1)' }}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        const f = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
-                        if (f) f.style.display = 'flex';
-                      }}
-                    />
-                    <div className="hidden absolute inset-0 w-full h-full items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl">
-                      <span className="text-9xl font-black text-white">{roommateLightbox.full_name.charAt(0)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="w-64 h-64 sm:w-80 sm:h-80 flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl shadow-2xl">
-                    <span className="text-9xl font-black text-white">{roommateLightbox.full_name.charAt(0)}</span>
-                  </div>
-                )}
-
-                {/* Phone details and Copy Button */}
-                <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-full max-w-[320px] flex flex-col items-center gap-2 p-0">
-                  <p className="text-white/40 text-[9px] font-black uppercase tracking-widest">Phone Number</p>
-                  <div className="flex items-center gap-3">
-                    <span className="text-white text-2xl font-black tracking-tighter">{roommateLightbox.phone || 'No Number'}</span>
-                    {roommateLightbox.phone && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigator.clipboard.writeText(roommateLightbox.phone);
-                          setPhoneCopied(true);
-                          setTimeout(() => setPhoneCopied(false), 2000);
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${phoneCopied ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
-                          }`}
-                      >
-                        {phoneCopied ? (
-                          <>
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                              <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            Copy
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <style jsx>{`
-                @keyframes fadeInLightbox {
-                  from { opacity: 0; }
-                  to   { opacity: 1; }
-                }
-                @keyframes scaleInLightbox {
-                  from { opacity: 0; transform: scale(0.95); }
-                  to   { opacity: 1; transform: scale(1); }
-                }
-              `}</style>
-            </div>
-          )}
+          {/* Status Dot */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 border border-gray-100">
+            <div className={`w-2 h-2 rounded-full ${isLoggingInHostel ? 'bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]' : isHostelLoggedIn ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-gray-300'}`} />
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              {isLoggingInHostel ? 'Authenticating' : isHostelLoggedIn ? 'Connected' : 'Offline'}
+            </span>
+          </div>
         </div>
+      </div>
       )}
 
-      {/* ── Offline banner ── */}
-      {isOffline && (
-        <div className="w-full max-w-xl mb-3 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-4 py-2 rounded-xl">
-          <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-          Offline — showing cached results
-        </div>
-      )}
-
-      {/* ── Saved Bookmarks (Main Search) ── */}
-      {mainBookmarks.length > 0 && activeTab === 'main' && (
-        <div className="w-full max-w-xl mb-4">
-          <button
-            onClick={() => setShowMainBookmarks(!showMainBookmarks)}
-            className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 hover:text-gray-700"
+      {/* ── Roommate Photo Lightbox ── */}
+      {
+        roommateLightbox && (
+          <div
+            className="fixed inset-0 z-[500] flex items-center justify-center bg-black/90 backdrop-blur-md p-6 sm:p-12"
+            onClick={() => setRoommateLightbox(null)}
+            style={{ animation: 'fadeInLightbox 0.25s ease-out' }}
           >
-            <svg className={`w-4 h-4 transition-transform ${showMainBookmarks ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-            Saved ({mainBookmarks.length})
-          </button>
-          {showMainBookmarks && (
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1">
-              {mainBookmarks.map((student) => (
-                <div
-                  key={student.id}
-                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
-                  onClick={() => {
-                    setSelected(student);
-                    setQuery(`${student.surname} ${student.otherNames}`);
-                  }}
-                >
+            <div
+              className="relative max-w-3xl w-full max-h-full flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close button */}
+              <button
+                onClick={() => setRoommateLightbox(null)}
+                className="absolute -top-14 right-0 w-12 h-12 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-full flex items-center justify-center transition-all group active:scale-90"
+              >
+                <svg className="w-6 h-6 text-white group-hover:rotate-90 transition-transform" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              {roommateLightbox.imageUrl ? (
+                <div className="relative w-full h-full flex items-center justify-center">
                   <img
-                    src={student.imageUrl || getPhotoUrl(student.emailAddress)}
-                    alt=""
-                    className="w-8 h-8 rounded-lg object-cover bg-gray-200"
+                    src={roommateLightbox.imageUrl}
+                    alt={roommateLightbox.full_name}
+                    className="max-w-full max-h-[80vh] rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] object-contain border border-white/20"
+                    style={{ animation: 'scaleInLightbox 0.3s cubic-bezier(0.2, 1, 0.3, 1)' }}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = getPhotoUrl(student.emailAddress);
+                      (e.target as HTMLImageElement).style.display = 'none';
+                      const f = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                      if (f) f.style.display = 'flex';
                     }}
                   />
-                  <div className="text-left min-w-0">
-                    <p className="text-xs font-bold text-gray-900 truncate max-w-[120px]">{student.surname} {student.otherNames}</p>
-                    <p className="text-[10px] text-gray-500">{student.emailAddress?.split('@')[0] || student.phone || '—'}</p>
+                  <div className="hidden absolute inset-0 w-full h-full items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl">
+                    <span className="text-9xl font-black text-white">{roommateLightbox.full_name.charAt(0)}</span>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleMainBookmark(student);
-                    }}
-                    className="p-1 hover:bg-gray-100 rounded shrink-0"
-                  >
-                    <svg className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Main Search area ── */}
-      {activeTab === 'main' && (
-        <div className="w-full max-w-xl min-w-0 relative z-30">
-
-          {/* Dropdown backdrop — transparent, sits behind dropdown but above page */}
-          {showDrop && (
-            <div
-              className="fixed inset-0 z-20"
-              onClick={closeDrop}
-              aria-hidden
-            />
-          )}
-
-          <div className="relative z-30 min-w-0">
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={handleInput}
-              onFocus={() => {
-                if (suggestions.length > 0 && query.trim().length >= 1) setShowDrop(true);
-              }}
-              placeholder="Search by name or index number…"
-              autoComplete="off"
-              spellCheck={false}
-              inputMode="search"
-              enterKeyHint="search"
-              className="w-full bg-white border border-gray-300 text-gray-900 placeholder-gray-400
-                       text-base sm:text-base font-semibold uppercase tracking-wide
-                       px-5 pr-12 py-3.5 rounded-xl outline-none shadow-sm
-                       focus:border-blue-500 focus:ring-1 focus:ring-blue-500
-                       transition-all duration-150"
-            />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-              {loading ? (
-                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin pointer-events-none" />
-              ) : query.length > 0 ? (
-                <button
-                  onClick={() => { setQuery(''); setSelected(null); setShowDrop(false); setSuggestions([]); inputRef.current?.focus(); }}
-                  className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-200 hover:bg-gray-300 active:scale-95 transition-all"
-                  aria-label="Clear"
-                >
-                  <svg className="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               ) : (
-                <svg className="w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-                </svg>
+                <div className="w-64 h-64 sm:w-80 sm:h-80 flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl shadow-2xl">
+                  <span className="text-9xl font-black text-white">{roommateLightbox.full_name.charAt(0)}</span>
+                </div>
               )}
+
+              {/* Phone details and Copy Button */}
+              <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-full max-w-[320px] flex flex-col items-center gap-2 p-0">
+                <p className="text-white/40 text-[9px] font-black uppercase tracking-widest">Phone Number</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-white text-2xl font-black tracking-tighter">{roommateLightbox.phone || 'No Number'}</span>
+                  {roommateLightbox.phone && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(roommateLightbox.phone);
+                        setPhoneCopied(true);
+                        setTimeout(() => setPhoneCopied(false), 2000);
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${phoneCopied ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
+                        }`}
+                    >
+                      {phoneCopied ? (
+                        <>
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          Copy
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
+          </div>
+        )
+      }
 
-            {/* Dropdown — rendered above backdrop (z-30 > z-20) */}
-            {showDrop && suggestions.length > 0 && (
-              <div
-                ref={dropRef}
-                onScroll={(e) => {
-                  const target = e.currentTarget;
-                  const scrollPercent = (target.scrollTop + target.clientHeight) / target.scrollHeight;
-                  if (scrollPercent > 0.85 && hasMore && !loadingMore) {
-                    // Trigger load more by increasing effective limit
-                    const newLimit = Math.min(suggestions.length + PAGE_SIZE, 50);
-                    loadMoreResults(newLimit);
-                  }
-                }}
-                className="absolute inset-x-0 top-full mt-1.5 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden max-h-64 overflow-y-auto overscroll-contain"
-                style={{ zIndex: 40 }}
+      {/* ── Student Photo Lightbox ── */}
+      {
+        studentPhotoLightbox && (
+          <div
+            className="fixed inset-0 z-[500] flex items-center justify-center bg-black/90 backdrop-blur-md p-6 sm:p-12"
+            onClick={() => setStudentPhotoLightbox(null)}
+            style={{ animation: 'fadeInLightbox 0.25s ease-out' }}
+          >
+            <div
+              className="relative max-w-3xl w-full max-h-full flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close button */}
+              <button
+                onClick={() => setStudentPhotoLightbox(null)}
+                className="absolute -top-14 right-0 w-12 h-12 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-full flex items-center justify-center transition-all group active:scale-90"
               >
-                {suggestions.map((s, i) => (
-                  <button
-                    key={s.id}
-                    onClick={() => pick(s)}
-                    className={[
-                      'w-full flex items-center gap-3 px-4 py-3 text-left min-w-0',
-                      'hover:bg-gray-50 active:bg-gray-100 transition-colors',
-                      i > 0 ? 'border-t border-gray-100' : '',
-                    ].join(' ')}
-                  >
-                    <div className="shrink-0">
-                      <Avatar student={s} />
-                    </div>
-                    <div className="flex-1 min-w-0 overflow-hidden">
-                      <p className="text-gray-900 text-sm font-semibold truncate leading-tight">{s.surname} {s.otherNames}</p>
-                      <p className="text-gray-500 text-xs truncate mt-0.5">{s.emailAddress}</p>
-                    </div>
-                    <span className="shrink-0 text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full font-semibold ml-1">
-                      {buildRole(s.roleRank, s.emailStatus)}
-                    </span>
-                  </button>
-                ))}
-                {/* Load more button - shows when hasMore and not currently loading */}
-                {hasMore && !loadingMore && suggestions.length >= 10 && (
-                  <button
+                <svg className="w-6 h-6 text-white group-hover:rotate-90 transition-transform" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <div className="relative w-full h-full flex items-center justify-center">
+                <img
+                  src={`https://upsasip.com/images/students/contStudents/${studentPhotoLightbox.studentId}.jpg`}
+                  alt={studentPhotoLightbox.name}
+                  className="max-w-full max-h-[80vh] rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] object-contain border border-white/20"
+                  style={{ animation: 'scaleInLightbox 0.3s cubic-bezier(0.2, 1, 0.3, 1)' }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                    const f = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                    if (f) f.style.display = 'flex';
+                  }}
+                />
+                <div className="hidden absolute inset-0 w-full h-full items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 rounded-3xl">
+                  <span className="text-9xl font-black text-white">{(studentPhotoLightbox.name || '?').charAt(0)}</span>
+                </div>
+              </div>
+
+              {/* Info Overlay */}
+              <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-full text-center flex flex-col gap-1">
+                <p className="text-white text-xl font-bold tracking-tight">{studentPhotoLightbox.name}</p>
+                <p className="text-blue-400 text-xs font-black uppercase tracking-widest">{studentPhotoLightbox.studentId}</p>
+              </div>
+            </div>
+          </div>
+        )
+      }
+      <style jsx>{`
+        @keyframes fadeInLightbox {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes scaleInLightbox {
+          from { opacity: 0; transform: scale(0.95); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
+
+      {/* ── Offline banner ── */}
+      {
+        isOffline && (
+          <div className="w-full max-w-xl mb-3 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-4 py-2 rounded-xl">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            Offline — showing cached results
+          </div>
+        )
+      }
+
+
+
+      {/* ── Saved Bookmarks (Main Search) ── */}
+      {
+        mainBookmarks.length > 0 && activeTab === 'main' && (
+          <div className="w-full max-w-xl mb-4">
+            <button
+              onClick={() => setShowMainBookmarks(!showMainBookmarks)}
+              className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 hover:text-gray-700"
+            >
+              <svg className={`w-4 h-4 transition-transform ${showMainBookmarks ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+              Saved ({mainBookmarks.length})
+            </button>
+            {showMainBookmarks && (
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1">
+                {mainBookmarks.map((student) => (
+                  <div
+                    key={student.id}
+                    className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl hover:border-amber-300 hover:shadow-md transition-all cursor-pointer"
                     onClick={() => {
-                      const newLimit = Math.min(suggestions.length + PAGE_SIZE, 50);
-                      loadMoreResults(newLimit);
+                      setSelected(student);
+                      setQuery(`${student.surname} ${student.otherNames}`);
                     }}
-                    className="w-full py-3 text-center text-xs font-semibold text-blue-600 hover:bg-blue-50 border-t border-gray-100 transition-colors"
                   >
-                    Load more results
-                  </button>
-                )}
-
-                {loadingMore && (
-                  <div className="flex items-center justify-center py-4 border-t border-gray-100">
-                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                    <span className="ml-2 text-xs text-gray-500">Loading more...</span>
+                    <img
+                      src={student.imageUrl || getPhotoUrl(student.emailAddress)}
+                      alt=""
+                      className="w-8 h-8 rounded-lg object-cover bg-gray-200"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getPhotoUrl(student.emailAddress);
+                      }}
+                    />
+                    <div className="text-left min-w-0">
+                      <p className="text-xs font-bold text-gray-900 truncate max-w-[120px]">{student.surname} {student.otherNames}</p>
+                      <p className="text-[10px] text-gray-500">{student.emailAddress?.split('@')[0] || student.phone || '—'}</p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleMainBookmark(student);
+                      }}
+                      className="p-1 hover:bg-gray-100 rounded shrink-0"
+                    >
+                      <svg className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                )}
-
-                {/* End of results message */}
-                {!hasMore && suggestions.length > 0 && (
-                  <div className="py-3 text-center text-xs text-gray-400 border-t border-gray-100">
-                    No more results
-                  </div>
-                )}
+                ))}
               </div>
             )}
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {/* ── Student Card ── */}
-      {selected && (
-        <>
-          {/* Card backdrop — only dismisses the card, not the search */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={dismissCard}
-            aria-hidden
-          />
+      {/* ── Main Search area ── */}
+      {
+        activeTab === 'main' && (
+          <div className="w-full max-w-xl min-w-0 relative z-30">
 
-          <div ref={cardRef} className="relative z-20 w-full max-w-xl mt-4 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-lg">
-
-            {/* Header */}
-            <div className="flex gap-4 p-4 sm:p-5">
-              <Avatar
-                student={selected}
-                large
-                onClick={() => setLightbox(getPhotoUrl(selected.emailAddress))}
+            {/* Dropdown backdrop — transparent, sits behind dropdown but above page */}
+            {showDrop && (
+              <div
+                className="fixed inset-0 z-20"
+                onClick={closeDrop}
+                aria-hidden
               />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between">
-                  <h2 className="text-gray-900 font-bold text-base sm:text-lg leading-tight break-words pr-2">
-                    {selected.surname} {selected.otherNames}
-                  </h2>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => toggleMainBookmark(selected)}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                      title={isMainBookmarked(selected) ? 'Remove bookmark' : 'Add bookmark'}
-                    >
-                      <svg className={`w-5 h-5 ${isMainBookmarked(selected) ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                      </svg>
-                    </button>
-                    {suggestions.length > 1 && (
-                      <button
-                        onClick={() => {
-                          setSelected(null);
-                          setQuery(lastQuery);
-                          setShowDrop(true);
-                          setTimeout(() => inputRef.current?.focus(), 50);
-                        }}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all active:scale-95 border border-blue-100"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-                        </svg>
-                        <span className="text-[10px] font-bold uppercase tracking-wide">Back</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center mt-1">
-                  <span className="text-gray-500 text-xs sm:text-sm truncate">{selected.emailAddress}</span>
-                  <Copy text={selected.emailAddress} />
-                </div>
-                <span className="inline-block mt-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full font-semibold">
-                  {buildRole(selected.roleRank, selected.emailStatus)}
-                </span>
-              </div>
-            </div>
+            )}
 
-            {/* Toggle */}
-            <button
-              onClick={() => setExpanded(v => !v)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-50 border-t border-gray-200
-                         text-gray-400 text-[10px] font-bold uppercase tracking-widest
-                         hover:text-gray-700 hover:bg-gray-100 transition-colors"
-            >
-              {expanded ? 'Hide details' : 'Show details'}
-              <svg className={`w-3.5 h-3.5 transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
-            </button>
-
-            {/* Expanded details */}
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
-              <div className="p-4 grid grid-cols-2 gap-2.5 border-t border-gray-200">
-                <Cell label="Index Number" value={selected.emailAddress?.split('@')[0]} />
-                <Cell label="Gender" value={selected.gender} />
-                <Cell label="Date of Birth" value={buildDate(selected.dateOfBirth, selected.roleRank)} />
-                <Cell label="Program" value={selected.program || '—'} />
-                <Cell label="Email Status" value={clean(selected.emailStatus)} />
-
-                {/* ── Additional Hostel Info ── */}
-                {extraHostelInfo ? (
-                  <>
-                    <Cell label="Hostel / Hall" value={extraHostelInfo.hall || extraHostelInfo.hostel} />
-                    <Cell label="Room & Bed" value={extraHostelInfo.room ? `Rm ${extraHostelInfo.room} · Bed ${extraHostelInfo.bed}` : '—'} />
-                    <Cell label="Phone Number" value={extraHostelInfo.phone} />
-                    <Cell label="Academic Level" value={extraHostelInfo.level ? `Lvl ${extraHostelInfo.level}` : '—'} />
-                  </>
-                ) : null}
+            <div className="relative z-30 min-w-0">
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={handleInput}
+                onFocus={() => {
+                  if (suggestions.length > 0 && query.trim().length >= 1) setShowDrop(true);
+                }}
+                placeholder="Search by name or index number…"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="search"
+                enterKeyHint="search"
+                className="w-full bg-white border border-gray-300 text-gray-900 placeholder-gray-400 text-base sm:text-base font-semibold uppercase tracking-wide px-5 pr-12 py-3.5 rounded-xl outline-none shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-150"
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                {loading ? (
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin pointer-events-none" />
+                ) : query.length > 0 ? (
+                  <button
+                    onClick={() => { setQuery(''); setSelected(null); setShowDrop(false); setSuggestions([]); inputRef.current?.focus(); }}
+                    className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-200 hover:bg-gray-300 active:scale-95 transition-all"
+                    aria-label="Clear"
+                  >
+                    <svg className="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                ) : (
+                  <svg className="w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                  </svg>
+                )}
               </div>
 
-              {/* ── Portal shortcuts ── */}
-              <div className="px-4 pb-5 flex flex-col gap-2">
-                <p className="text-gray-400 text-[9px] font-bold uppercase tracking-widest pt-2 pb-1">Quick Login</p>
-
-                <button
-                  onClick={async () => {
-                    const idx = selected.emailAddress?.split('@')[0];
-                    const dob = buildDate(selected.dateOfBirth, selected.roleRank);
-                    if (!idx) return;
-                    setIsResetting(true);
-                    try {
-                      // Reset the password first
-                      console.log('Attempting password reset for:', idx);
-                      const resetRes = await fetch('/api/v1/password-reset', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ indexNum: idx })
-                      });
-
-                      if (!resetRes.ok) {
-                        const err = await resetRes.json();
-                        console.error('Password reset failed:', err);
-                        alert(err.error || 'Password reset failed. Please try again.');
-                        setIsResetting(false);
-                        return;
-                      }
-
-                      console.log('Password reset successful, opening portal...');
-                      // Small delay to allow portal to process the reset
-                      await new Promise(r => setTimeout(r, 1500));
-
-                      // Now open the portal and login with DOB
-                      launchStudentPortal(idx, toStudentPortalDOB(dob));
-                    } catch (e) {
-                      console.error('Bypass login error:', e);
-                      alert('Login failed. Please try again. Make sure you have internet connection.');
-                    } finally {
-                      setIsResetting(false);
+              {/* Dropdown — rendered above backdrop (z-30 > z-20) */}
+              {showDrop && suggestions.length > 0 && (
+                <div
+                  ref={dropRef}
+                  onScroll={(e) => {
+                    const target = e.currentTarget;
+                    const scrollPercent = (target.scrollTop + target.clientHeight) / target.scrollHeight;
+                    if (scrollPercent > 0.85 && hasMore && !loadingMore) {
+                      // Trigger load more by increasing effective limit
+                      const newLimit = Math.min(suggestions.length + PAGE_SIZE, 50);
+                      loadMoreResults(newLimit);
                     }
                   }}
-                  disabled={isResetting || isOffline}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] bg-amber-50 border-amber-200 hover:bg-amber-100 mb-1"
+                  className="absolute inset-x-0 top-full mt-1.5 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden max-h-64 overflow-y-auto overscroll-contain"
+                  style={{ zIndex: 40 }}
                 >
-                  <div className="shrink-0 w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                    {isResetting ? (
-                      <div className="w-4 h-4 border-2 border-amber-600 border-r-transparent rounded-full animate-spin" />
-                    ) : (
-                      <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14V5a2 2 0 00-2-2H6a2 2 0 00-2 2v16l4-2 4 2 4-2 4 2z" />
-                      </svg>
-                    )}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-gray-900 text-xs font-bold">Bypass Password & Login</p>
-                    <p className="text-gray-500 text-[10px] mt-0.5">
-                      Securely access the portal without password
-                    </p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => launchStudentPortal(
-                    selected.emailAddress?.split('@')[0] || '',
-                    toStudentPortalDOB(buildDate(selected.dateOfBirth, selected.roleRank))
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={s.id}
+                      onClick={() => pick(s)}
+                      className={[
+                        'w-full flex items-center gap-3 px-4 py-3 text-left min-w-0',
+                        'hover:bg-gray-50 active:bg-gray-100 transition-colors',
+                        i > 0 ? 'border-t border-gray-100' : '',
+                      ].join(' ')}
+                    >
+                      <div className="shrink-0">
+                        <Avatar student={s} />
+                      </div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <p className="text-gray-900 text-sm font-semibold truncate leading-tight">{s.surname} {s.otherNames}</p>
+                        <p className="text-gray-500 text-xs truncate mt-0.5">{s.emailAddress}</p>
+                      </div>
+                      <span className="shrink-0 text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full font-semibold ml-1">
+                        {buildRole(s.roleRank, s.emailStatus)}
+                      </span>
+                    </button>
+                  ))}
+                  {/* Load more button - shows when hasMore and not currently loading */}
+                  {hasMore && !loadingMore && suggestions.length >= 10 && (
+                    <button
+                      onClick={() => {
+                        const newLimit = Math.min(suggestions.length + PAGE_SIZE, 50);
+                        loadMoreResults(newLimit);
+                      }}
+                      className="w-full py-3 text-center text-xs font-semibold text-blue-600 hover:bg-blue-50 border-t border-gray-100 transition-colors"
+                    >
+                      Load more results
+                    </button>
                   )}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] bg-blue-50 border-blue-200 hover:bg-blue-100"
-                >
-                  <div className="shrink-0 w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 7v-6m0 0l6.16-3.422" />
+
+                  {loadingMore && (
+                    <div className="flex items-center justify-center py-4 border-t border-gray-100">
+                      <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      <span className="ml-2 text-xs text-gray-500">Loading more...</span>
+                    </div>
+                  )}
+
+                  {/* End of results message */}
+                  {!hasMore && suggestions.length > 0 && (
+                    <div className="py-3 text-center text-xs text-gray-400 border-t border-gray-100">
+                      No more results
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      {/* ── Student Card ── */}
+      {
+        selected && (
+          <>
+            {/* Card backdrop — only dismisses the card, not the search */}
+            <div
+              className="fixed inset-0 z-10"
+              onClick={dismissCard}
+              aria-hidden
+            />
+
+            <div ref={cardRef} className="relative z-20 w-full max-w-xl mt-4 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-lg">
+
+              {/* Header */}
+              <div className="flex gap-4 p-4 sm:p-5">
+                <Avatar
+                  student={selected}
+                  large
+                  onClick={() => setLightbox(getPhotoUrl(selected.emailAddress))}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between">
+                    <h2 className="text-gray-900 font-bold text-base sm:text-lg leading-tight break-words pr-2">
+                      {selected.surname} {selected.otherNames}
+                    </h2>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => toggleMainBookmark(selected)}
+                        className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                        title={isMainBookmarked(selected) ? 'Remove bookmark' : 'Add bookmark'}
+                      >
+                        <svg className={`w-5 h-5 ${isMainBookmarked(selected) ? 'text-amber-500 fill-amber-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                      </button>
+                      {suggestions.length > 1 && (
+                        <button
+                          onClick={() => {
+                            setSelected(null);
+                            setQuery(lastQuery);
+                            setShowDrop(true);
+                            setTimeout(() => inputRef.current?.focus(), 50);
+                          }}
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all active:scale-95 border border-blue-100"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+                          </svg>
+                          <span className="text-[10px] font-bold uppercase tracking-wide">Back</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center mt-1">
+                    <span className="text-gray-500 text-xs sm:text-sm truncate">{selected.emailAddress}</span>
+                    <Copy text={selected.emailAddress} />
+                  </div>
+                  <span className="inline-block mt-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full font-semibold">
+                    {buildRole(selected.roleRank, selected.emailStatus)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Toggle */}
+              <button
+                onClick={() => setExpanded(v => !v)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-50 border-t border-gray-200 text-gray-400 text-[10px] font-bold uppercase tracking-widest hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                {expanded ? 'Hide details' : 'Show details'}
+                <svg className={`w-3.5 h-3.5 transition-transform duration-300 ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                </svg>
+              </button>
+
+              {/* Expanded details */}
+              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                <div className="p-4 grid grid-cols-2 gap-2.5 border-t border-gray-200">
+                  <Cell label="Index Number" value={selected.emailAddress?.split('@')[0]} />
+                  <Cell label="Gender" value={selected.gender} />
+                  <Cell label="Date of Birth" value={buildDate(selected.dateOfBirth, selected.roleRank)} />
+                  <Cell label="Program" value={selected.program || '—'} />
+                  <Cell label="Email Status" value={clean(selected.emailStatus)} />
+
+                  {/* ── Additional Hostel Info ── */}
+                  {extraHostelInfo ? (
+                    <>
+                      <Cell label="Hostel / Hall" value={extraHostelInfo.hall || extraHostelInfo.hostel} />
+                      <Cell label="Room & Bed" value={extraHostelInfo.room ? `Rm ${extraHostelInfo.room} · Bed ${extraHostelInfo.bed}` : '—'} />
+                      <Cell label="Phone Number" value={extraHostelInfo.phone} />
+                      <Cell label="Academic Level" value={extraHostelInfo.level ? `Lvl ${extraHostelInfo.level}` : '—'} />
+                    </>
+                  ) : null}
+                </div>
+
+                {/* ── Portal shortcuts ── */}
+                <div className="px-4 pb-5 flex flex-col gap-2">
+                  <p className="text-gray-400 text-[9px] font-bold uppercase tracking-widest pt-2 pb-1">Quick Login</p>
+
+                  <button
+                    onClick={async () => {
+                      const idx = selected.emailAddress?.split('@')[0];
+                      const dob = buildDate(selected.dateOfBirth, selected.roleRank);
+                      if (!idx) return;
+                      setIsResetting(true);
+                      try {
+                        // Reset the password first
+                        console.log('Attempting password reset for:', idx);
+                        const resetRes = await fetch('/api/v1/password-reset', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ indexNum: idx })
+                        });
+
+                        if (!resetRes.ok) {
+                          const err = await resetRes.json();
+                          console.error('Password reset failed:', err);
+                          alert(err.error || 'Password reset failed. Please try again.');
+                          setIsResetting(false);
+                          return;
+                        }
+
+                        console.log('Password reset successful, opening portal...');
+                        // Small delay to allow portal to process the reset
+                        await new Promise(r => setTimeout(r, 1500));
+
+                        // Now open the portal and login with DOB
+                        launchStudentPortal(idx, toStudentPortalDOB(dob));
+                      } catch (e) {
+                        console.error('Bypass login error:', e);
+                        alert('Login failed. Please try again. Make sure you have internet connection.');
+                      } finally {
+                        setIsResetting(false);
+                      }
+                    }}
+                    disabled={isResetting || isOffline}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] bg-amber-50 border-amber-200 hover:bg-amber-100 mb-1"
+                  >
+                    <div className="shrink-0 w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                      {isResetting ? (
+                        <div className="w-4 h-4 border-2 border-amber-600 border-r-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14V5a2 2 0 00-2-2H6a2 2 0 00-2 2v16l4-2 4 2 4-2 4 2z" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="text-gray-900 text-xs font-bold">Bypass Password & Login</p>
+                      <p className="text-gray-500 text-[10px] mt-0.5">
+                        Securely access the portal without password
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => launchStudentPortal(
+                      selected.emailAddress?.split('@')[0] || '',
+                      toStudentPortalDOB(buildDate(selected.dateOfBirth, selected.roleRank))
+                    )}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all active:scale-[0.98] bg-blue-50 border-blue-200 hover:bg-blue-100"
+                  >
+                    <div className="shrink-0 w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 7v-6m0 0l6.16-3.422" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="text-gray-900 text-xs font-bold">Student Portal</p>
+                      <p className="text-gray-500 text-[10px] mt-0.5">
+                        Auto-login as {selected.emailAddress?.split('@')[0]}
+                      </p>
+                    </div>
+                    <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-gray-900 text-xs font-bold">Student Portal</p>
-                    <p className="text-gray-500 text-[10px] mt-0.5">
-                      Auto-login as {selected.emailAddress?.split('@')[0]}
-                    </p>
-                  </div>
-                  <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </button>
+
+                  <UfisButton
+                    indexNum={`UPSA - ${selected.emailAddress?.split('@')[0]} `}
+                    dob={toUfisDOB(buildDate(selected.dateOfBirth, selected.roleRank))}
+                  />
+
+                  <button
+                    onClick={async () => {
+                      if (!selected.emailAddress) return;
+                      setIsFetchingTranscript(true);
+                      setTranscriptError(null);
+                      try {
+                        const res = await fetch('/api/v1/student-portal', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            indexNum: selected.emailAddress.split('@')[0],
+                            password: toStudentPortalDOB(buildDate(selected.dateOfBirth, selected.roleRank)),
+                            bypass: true
+                          })
+                        });
+                        if (!res.ok) {
+                          const errData = await res.json().catch(() => ({}));
+                          const msg = errData.error || 'Portal failed or login rejected';
+                          throw new Error(msg);
+                        }
+                        const html = await res.text();
+                        setTranscriptHtml(html);
+                      } catch (e: any) {
+                        setTranscriptError(e.message || 'Failed to fetch transcript');
+                        alert(e.message || 'Portal connection failed. Please try again later.');
+                      } finally {
+                        setIsFetchingTranscript(false);
+                      }
+                    }}
+                    disabled={isFetchingTranscript}
+                    className="w-full bg-white border border-blue-200 text-blue-700 rounded-xl p-3 flex items-center gap-3 hover:bg-blue-50 transition-all active:scale-[0.98] mt-3 relative overflow-hidden"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                      {isFetchingTranscript ? (
+                        <div className="w-4 h-4 border-2 border-blue-600 border-r-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="text-gray-900 text-xs font-bold">
+                        {isFetchingTranscript ? 'Fetching Results...' : 'Results'}
+                      </p>
+                      <p className="text-gray-500 text-[10px] mt-0.5">
+                        Direct connection to registrar
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      }
+
+      {/* Transcript Modal */}
+      {
+        transcriptHtml && (
+          <div className="fixed inset-0 z-50 bg-white flex flex-col animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white shrink-0">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setTranscriptHtml(null)}
+                  className="w-10 h-10 flex items-center justify-center rounded-2xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-all active:scale-90"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
-
-                <UfisButton
-                  indexNum={`UPSA - ${selected.emailAddress?.split('@')[0]} `}
-                  dob={toUfisDOB(buildDate(selected.dateOfBirth, selected.roleRank))}
-                />
-
+                <div>
+                  <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest">Official Results</h2>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">{selected?.surname} {selected?.otherNames}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
                 <button
-                  // Fetch Transcript is disabled - Coming Soon
-                  onClick={() => {
-                    alert('This feature is coming soon!');
-                  }}
-                  className="w-full bg-gray-100 border border-gray-200 rounded-xl p-3 flex items-center gap-3 cursor-not-allowed mt-3 relative overflow-hidden"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-500/25"
                 >
-                  <div className="absolute top-0 right-0 bg-amber-500 text-white text-[9px] font-black px-2 py-0.5 rounded-bl-lg uppercase tracking-wider">
-                    Coming Soon
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-gray-400 text-xs font-bold">Fetch Transcript</p>
-                    <p className="text-gray-400 text-[10px] mt-0.5">
-                      Feature unavailable
-                    </p>
-                  </div>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  Download
                 </button>
               </div>
             </div>
-          </div>
-        </>
-      )}
 
-      {/* Transcript Modal */}
-      {transcriptHtml && (
-        <div className="fixed inset-0 z-50 bg-white flex flex-col animate-in fade-in slide-in-from-bottom-4">
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white shrink-0">
-            <div>
-              <h2 className="text-sm font-bold text-gray-900">Transcript</h2>
-              <p className="text-xs text-gray-500">{selected?.surname} {selected?.otherNames}</p>
-            </div>
-            <button
-              onClick={() => setTranscriptHtml(null)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 bg-gray-50 overflow-auto">
-            <iframe
-              title="Transcript"
-              srcDoc={transcriptHtml}
-              className="w-full h-full border-none"
-              sandbox="allow-same-origin"
+            <ProfessionalTranscript
+              html={transcriptHtml}
+              selected={selected}
+              onBack={() => setTranscriptHtml(null)}
             />
+
+            {/* Hidden iframe for printing if needed */}
+            <div id="transcript-content" className="hidden">
+              <iframe srcDoc={transcriptHtml} />
+            </div>
           </div>
-        </div>
-      )
+        )
       }
 
       {/* Lightbox */}
@@ -1632,6 +2282,6 @@ export default function LandingPage() {
       <a href="/import" className="mt-auto pt-10 text-gray-300 hover:text-gray-500 text-[10px] uppercase tracking-widest transition-colors">
         Admin Import
       </a>
-    </div >
+    </div>
   );
 }

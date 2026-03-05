@@ -1,0 +1,12 @@
+--- Step 1: GET Login Page ---
+CSRF Token: s9o05xdCNLBMBZS_I_PkvP-BI6Ew-Ae99zsASKGTe7P1hVqjZztSwn00xu4a3rfMmfFm7lSySsWmSjc57fcLhw==
+Detected input names: _csrf-frontend, username, password
+
+--- Step 2: POST Login ---
+Login Status: 500
+Location: undefined
+
+--- Step 3: Registration Index ---
+Search Status: 200
+Authenticated (Logout link): false
+FAILURE: Table not found.

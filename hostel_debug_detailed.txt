@@ -1,0 +1,12 @@
+--- Task: Testing Hostel Portal Connection ---
+Step 1: Fetching login page for CSRF...
+CSRF Token found: 9sa_duflUNqPcjlJ7aCCFkg1BbbarzgAi4yFVYp2s0uMlec9uN0ckb8wTSCh1clnGQREgZeZe1Oyyspgwz_UDg==
+
+Step 2: Attempting POST Login...
+Login Response Status: 500
+Login Location: undefined
+
+Step 3: Accessing Protected Registration Index...
+Index Status: 200
+Authenticated (has Logout link): false
+FAILURE: Could not confirm authenticated session.

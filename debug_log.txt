@@ -1,0 +1,27 @@
+--- Step 1: Warmup ---
+Warmup Status: 200
+Cookies: PHPSESSID=s4ccu91phmkcorc4i5gqsf40v8
+
+--- Step 2: Reset Password ---
+Reset Status: 200
+Reset Response Length: 4560
+
+Waiting 3s for portal sync...
+
+--- Step 3: Login ---
+Login Status: 302
+Login Redirect: /student-portal
+
+--- Step 4: Fetch Transcript ---
+Transcript Status: 200
+Transcript Body Preview: <!DOCTYPE html>
+<html lang="en" data-textdirection="LTR" class="loading">
+<head>
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="">
+    <meta name="aut
+
+SUCCESS: Transcript content detected.

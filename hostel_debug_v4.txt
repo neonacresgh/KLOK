@@ -1,0 +1,6 @@
+--- Task: Table Structure Analysis ---
+Step 1: Login...
+Step 2: Fetching List...
+Authenticated successfully.
+Thead not found.
+First Row Data: 1 | 10309565 | MAC-PIUSSON ABRAHAM NII OBODAI TORGBOR | 229 | Bed 2 | Naa Astwei  Oduro-Koranteng
